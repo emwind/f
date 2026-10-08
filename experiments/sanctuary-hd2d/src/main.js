@@ -390,7 +390,7 @@ G.onDeath = () => {
     $('fade').classList.add('on');
     setTimeout(() => {
       G.state.hp = G.state.maxHp;
-      const cp = G.state.checkpoint;
+      const cp = G.state.checkpoint ?? { map: G.L.id, ...G.L.spawn };
       if (G.boss && !G.state.flags.bossDown) G.state.flags['gate:bossDoor'] = true;
       loadMap(cp.map, { x: cp.x, z: cp.z, dir: cp.dir ?? 'up' });
       $('fade').classList.remove('on');
