@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sprite Atlas</title>
+<style>body{margin:0;background:#3b4a44}canvas{image-rendering:pixelated;display:block}</style></head>
+<body><script type="module">
+import { buildAtlas } from './src/sprites.js';
+const { canvas } = buildAtlas();
+const s = +(new URLSearchParams(location.search).get('s') ?? 1);
+canvas.style.width = canvas.width * s + 'px';
+document.body.appendChild(canvas);
+window.__ready = true;
+</script></body></html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravine Sanctuary</title>
+<style>
+  :root { --ink: #e9dfc4; --dim: #a59a80; --panel: rgba(16, 18, 20, 0.78); --gold: #d8b660; }
+  html, body { margin: 0; height: 100%; background: #0d1210; overflow: hidden; color: var(--ink);
+    font: 13px/1.45 "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 16px; top: 14px; pointer-events: none; display: flex; gap: 4px; }
+  .heart { width: 18px; height: 16px; image-rendering: pixelated; }
+  #msg { position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%); padding: 10px 20px;
+    background: var(--panel); border: 1px solid #5c513c; border-radius: 3px; letter-spacing: .03em;
+    opacity: 0; transition: opacity .6s; pointer-events: none; text-align: center; max-width: 80vw; }
+  #msg.on { opacity: 1; }
+  #help { position: fixed; right: 14px; bottom: 12px; color: var(--dim); text-align: right; font-size: 12px;
+    background: rgba(10,12,12,.55); padding: 6px 10px; border-radius: 3px; pointer-events: none; }
+  #help b { color: var(--ink); font-weight: normal; }
+  #debug { position: fixed; right: 14px; top: 12px; width: 250px; background: var(--panel); padding: 10px 12px;
+    border: 1px solid #3c3a33; border-radius: 3px; display: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+  #debug.on { display: block; }
+  #debug label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 3px 0; }
+  #debug input[type=range] { width: 120px; }
+  #debug h3 { margin: 0 0 6px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--gold); }
+  #debug .row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  #debug button { font: 11px ui-monospace, Menlo, Consolas, monospace; background: #2a2b28; color: var(--ink); border: 1px solid #555; border-radius: 2px; padding: 2px 6px; cursor: pointer; }
+  #title { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(10,14,12,.55), rgba(8,10,9,.9)); transition: opacity 1s; z-index: 5; }
+  #title.gone { opacity: 0; pointer-events: none; }
+  #title h1 { font-weight: normal; letter-spacing: .18em; font-size: 28px; margin: 0 0 6px; color: var(--ink); }
+  #title p { color: var(--dim); margin: 2px; }
+  #title .go { margin-top: 18px; color: var(--gold); letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="msg"></div>
+<div id="help"><b>WASD / arrows</b> move · <b>Space</b> jump · <b>J</b> attack · <b>K / Shift</b> dash · <b>F1</b> camera debug</div>
+<div id="debug">
+  <h3>camera / render debug</h3>
+  <label>pitch <input id="dbPitch" type="range" min="25" max="70" step="1"><span id="dbPitchV"></span></label>
+  <label>fov <input id="dbFov" type="range" min="12" max="55" step="1"><span id="dbFovV"></span></label>
+  <label>distance <input id="dbDist" type="range" min="12" max="48" step="0.5"><span id="dbDistV"></span></label>
+  <label>yaw <input id="dbYaw" type="range" min="-30" max="30" step="1"><span id="dbYawV"></span></label>
+  <label>sun azimuth <input id="dbSunAz" type="range" min="0" max="360" step="5"><span id="dbSunAzV"></span></label>
+  <label>sun height <input id="dbSunEl" type="range" min="20" max="80" step="1"><span id="dbSunElV"></span></label>
+  <label>depth tint <input id="dbDeep" type="range" min="0" max="1" step="0.05"><span id="dbDeepV"></span></label>
+  <label>occluder reveal <input id="dbReveal" type="checkbox"></label>
+  <label>shadows <input id="dbShadows" type="checkbox"></label>
+  <div class="row">
+    <button data-preset="0">42° default</button><button data-preset="1">35° low</button>
+    <button data-preset="2">55° high</button><button data-preset="3">ortho-ish</button>
+  </div>
+  <div class="row"><button id="dbShot">save screenshot</button></div>
+</div>
+<div id="title">
+  <h1>RAVINE SANCTUARY</h1>
+  <p>an Alundra-lineage traversal and lighting prototype</p>
+  <p class="go" id="go">loading…</p>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
