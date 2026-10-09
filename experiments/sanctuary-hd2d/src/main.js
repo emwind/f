@@ -62,7 +62,7 @@ const THEMES = {
 const MOODS = {
   // cool shade under the canopy, warm broken sun patches
   'Forest Approach': {
-    bounce: '#6a6a56', sunColor: '#ffdcaa', sunI: 3.3, sky: '#8aaa9e', ground: '#626446', hemiI: 2.6, fillI: 0.22,
+    bounce: '#6a6a56', sunColor: '#ffdcaa', sunI: 4.0, sky: '#8aaa9e', ground: '#626446', hemiI: 2.35, fillI: 0.22,
     deep: '#13222a', deepAmt: 0.6, spriteAmbient: [0.48, 0.55, 0.6], spriteSun: [0.8, 0.68, 0.48],
   },
   // open sun on warm limestone, the pool as the cool counterpoint
@@ -77,7 +77,7 @@ const MOODS = {
   },
   // cooler and bluer, darker ambient; the braziers carry the warmth
   'Underground Shrine': {
-    bounce: '#3a4152', sunColor: '#8eaee0', sunI: 1.35, sky: '#4c6286', hemiI: 0.5, fillI: 0.06,
+    bounce: '#3a4152', sunColor: '#8eaee0', sunI: 1.35, sky: '#4c6286', hemiI: 0.64, fillI: 0.06,
     spriteAmbient: [0.26, 0.31, 0.44], spriteSun: [0.24, 0.28, 0.37],
   },
   // focused and readable: a brighter shaft over the arena, less murk

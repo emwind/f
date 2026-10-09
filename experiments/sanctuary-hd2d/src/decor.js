@@ -834,7 +834,7 @@ function dappleLayer(L, sun, rnd) {
       if (!edge) continue;
       const f = ff(x, z);
       const open = f.path * 0.7 + f.clear * 0.8 - f.bank * 0.9 + (fbm2(x * 0.45, z * 0.45, 3, 57) - 0.5) * 1.3;
-      if (open > 0.42) continue;
+      if (open > 0.34) continue;
       blob(x, 5, z, 0.42, '#fff');
     }
   // authored openings, each a cluster of round holes so the rim is leafy
