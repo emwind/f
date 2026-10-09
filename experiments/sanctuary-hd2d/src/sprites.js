@@ -177,7 +177,18 @@ function heroFrame(dir, pose) {
     : [[cx - 7.5, lift[0]], [cx + 0.5, lift[1]]];
   legs.forEach(([lx, ly], k) => {
     const top = 72 + b, bot = gy - 11 - ly;
-    shade(ctx, rrect(lx, top, 7.5, bot - top + 3, 3), R.cream, k ? [0, 1, 2] : [1, 2, 3], 1.4);
+    const tones = k ? [0, 1, 2] : [1, 2, 3];
+    if (side && ly > 1.5) {
+      // a lifted leg bends: knee forward, foot tucked back under
+      const kx = lx + ly * 0.7, ky = (top + bot) / 2 - ly * 0.2;
+      const fx = lx - ly * 0.35;
+      shade(ctx, poly([[lx, top], [lx + 7.5, top], [kx + 7.5, ky + 2], [kx, ky + 2]]), R.cream, tones, 1.2);
+      shade(ctx, poly([[kx, ky - 1], [kx + 7.5, ky - 1], [fx + 7.5, bot + 2], [fx, bot + 2]]), R.cream, tones, 1.2);
+      shade(ctx, rrect(fx - 0.5, bot - 1, 11, 12, [3, 5, 2, 2]), R.leather, [0, 1, 3], 1.4);
+      flat(ctx, rrect(fx - 0.5, bot - 1, 9, 2, 1), R.leather[3]);
+      return;
+    }
+    shade(ctx, rrect(lx, top, 7.5, bot - top + 3, 3), R.cream, tones, 1.4);
     shade(ctx, rrect(lx - 0.5, bot - 1, side ? 11 : 8.5, 12, [3, side ? 5 : 3, 2, 2]), R.leather, [0, 1, 3], 1.4);
     // boot cuff
     flat(ctx, rrect(lx - 0.5, bot - 1, side ? 9 : 8.5, 2, 1), R.leather[3]);
@@ -337,32 +348,38 @@ function heroFrames() {
       });
     });
     const idle = [0, 1].map((f) => heroFrame(dir, { bob: f ? -1 : 0, sway: f ? 0.6 : -0.4 }));
-    // jump: rising (legs tucked, hair and scarf trailing down), falling (legs reaching, hair lifted)
+    // jump: launch (one leg trailing, arms swept back, hair dragging down),
+    // apex (both legs tucked, a weightless beat), fall (legs reaching for the
+    // ground, hair and scarf lifting)
     const jump = [
-      heroFrame(dir, { bob: -2, lift: [7, 3], swing: -7, stride: 3, sway: 2, wind: 0.6 }),
-      heroFrame(dir, { bob: -1, lift: [2, 4], swing: 4, stride: -2, sway: -2.5, wind: 1 }),
+      heroFrame(dir, { bob: -2.5, lift: [8, 1], swing: -8, stride: 4, lean: side ? 2 : 0, sway: 3, wind: 0.4 }),
+      heroFrame(dir, { bob: -1.5, lift: [6, 6], swing: -3, stride: 1, lean: side ? 1 : 0, sway: 0, wind: 0.8 }),
+      heroFrame(dir, { bob: -0.5, lift: [1, 4], swing: 6, stride: -3, lean: side ? -1 : 0, sway: -3, wind: 1.3 }),
     ];
+    // landing: knees give, arms out for balance, hair still falling
+    const land = [heroFrame(dir, { bob: 4, lift: [0, 0], swing: 4, stride: side ? 3 : 0, lean: side ? 2 : 0, sway: 2.5, wind: 0.2 })];
     // dash: low and leaning hard, scarf and hair stream flat behind
-    const dash = [heroFrame(dir, { bob: 2, lift: [4, 0], swing: -6, stride: 6, lean: side ? 4 : 0, sway: side ? -1 : 1, wind: 2 })];
-    const hurt = [heroFrame(dir, { bob: 1.5, swing: 7, lift: [3, 0], lean: side ? -3 : 0, sway: 2.5, wind: 1, wince: true })];
-    // attack: wind-up, strike, follow-through
-    const atk = [0, 1, 2].map((f) => {
+    const dash = [heroFrame(dir, { bob: 3, lift: [5, 0], swing: -7, stride: 7, lean: side ? 5 : 0, sway: side ? -1.5 : 1.5, wind: 2.8 })];
+    // hurt: thrown back, one arm up, eyes shut
+    const hurt = [heroFrame(dir, { bob: 2, swing: 8, lift: [4, 0], stride: side ? -4 : 0, lean: side ? -4 : 0, sway: 3, wind: 1.2, wince: true })];
+    // attack: anticipation (crouched, blade cocked back), strike, follow-through, recovery
+    const atk = [0, 1, 2, 3].map((f) => {
       let sword;
-      if (dir === 'down') sword = [{ x: 52, y: 44, ang: -2.4, len: 22 }, { x: 46, y: 70, ang: 1.75, len: 26 }, { x: 22, y: 70, ang: 2.3, len: 24 }][f];
-      if (dir === 'up') sword = [{ x: 20, y: 50, ang: -0.6, len: 22, behind: true }, { x: 38, y: 30, ang: -1.55, len: 26, behind: true }, { x: 54, y: 40, ang: -1.0, len: 24, behind: true }][f];
-      if (side) sword = [{ x: 28, y: 44, ang: -2.0, len: 22, behind: true }, { x: 47, y: 60, ang: -0.1, len: 26 }, { x: 45, y: 70, ang: 0.8, len: 24 }][f];
+      if (dir === 'down') sword = [{ x: 54, y: 40, ang: -2.6, len: 22 }, { x: 46, y: 70, ang: 1.75, len: 26 }, { x: 22, y: 70, ang: 2.3, len: 24 }, { x: 26, y: 74, ang: 1.9, len: 22 }][f];
+      if (dir === 'up') sword = [{ x: 18, y: 52, ang: -0.4, len: 22, behind: true }, { x: 38, y: 30, ang: -1.55, len: 26, behind: true }, { x: 54, y: 40, ang: -1.0, len: 24, behind: true }, { x: 50, y: 50, ang: -0.6, len: 22, behind: true }][f];
+      if (side) sword = [{ x: 26, y: 42, ang: -2.3, len: 22, behind: true }, { x: 47, y: 60, ang: -0.1, len: 26 }, { x: 45, y: 70, ang: 0.8, len: 24 }, { x: 44, y: 72, ang: 1.1, len: 22 }][f];
       return heroFrame(dir, {
         sword,
-        bob: [1.5, -0.5, 0.5][f],
-        swing: f === 1 ? 6 : -4,
-        stride: side ? [-3, 5, 4][f] : 0,
+        bob: [2.5, -0.5, 1, 0.5][f],
+        swing: [-5, 6, -4, -2][f],
+        stride: side ? [-4, 5, 4, 2][f] : 0,
         lift: [0, f === 1 ? 2 : 0],
-        lean: side ? [-2, 3, 2][f] : 0,
-        sway: [-1.5, 2, 1][f],
-        wind: f === 1 ? 1 : 0.3,
+        lean: side ? [-3, 3, 3, 1][f] : 0,
+        sway: [-2, 2.5, 1.5, 0.5][f],
+        wind: [0.2, 1.2, 0.6, 0.3][f],
       });
     });
-    out[dir] = { walk, idle, jump, dash, hurt, atk };
+    out[dir] = { walk, idle, jump, land, dash, hurt, atk };
   }
   return out;
 }
