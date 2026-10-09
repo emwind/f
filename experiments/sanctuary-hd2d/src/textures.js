@@ -135,40 +135,79 @@ export function dirtTexture(size = 256, seed = 23) {
 }
 
 // ---------------------------------------------------------------- flagstones
-export function flagstoneTexture(size = 256, seed = 37) {
-  const t = canvas(size, size);
+// Laid paving: courses of long slabs running east-west, staggered joints,
+// worn arrises and the odd cracked or sunken slab. Two versions are painted
+// from the same layout: dry (gritty joints) and damp (moss in the joints and
+// creeping over slab edges). The ground shader blends them by a world-space
+// damp field, so moss only shows where water, shade and wall bases put it.
+export function flagstoneTextures(size = 256, seed = 37) {
+  const dry = canvas(size, size), damp = canvas(size, size);
+  const rnd = mulberry32(seed);
   const P = 4;
+  const rows = [];
+  let y0 = 0;
+  while (y0 < size) {
+    let h = [44, 50, 56, 64][Math.floor(rnd() * 4)];
+    if (size - y0 - h < 40) h = size - y0;
+    const slabs = [];
+    const start = Math.floor(rnd() * size);
+    let x0 = start;
+    while (x0 < start + size) {
+      let w = 46 + Math.floor(rnd() * 70);
+      if (start + size - x0 - w < 36) w = start + size - x0;
+      slabs.push({ x0, w, tone: rnd(), crack: rnd() < 0.22 ? rnd() : -1, sunk: rnd() < 0.12, id: slabs.length + rows.length * 50 });
+      x0 += w;
+    }
+    rows.push({ y0, h, slabs });
+    y0 += h;
+  }
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const u = (x / size) * P, v = (y / size) * P;
-      const wob = (fbm2t(u * 6, v * 6, P * 6, 2, seed) - 0.5) * 6;
-      const [d1, d2, id, cx, cy] = voronoi(x + wob, y - wob, 7, size, seed);
-      const edge = d2 - d1;
-      const stoneTone = (hashId(id) - 0.5) * 0.18;
-      const surf = (fbm2t(u * 5, v * 5, P * 5, 3, seed + 1) - 0.5) * 0.35;
-      // bevel: light from upper-left along cell border
-      const dx = x - cx, dy = y - cy;
-      const len = Math.hypot(dx, dy) + 1e-3;
-      const facing = (-dx - dy) / len; // >0 toward upper-left
-      let l = 0.55 + stoneTone + surf;
-      if (edge < 6) l += facing * (6 - edge) * 0.03;
-      let col;
-      if (edge < 2.2) {
-        // joint: moss or dark grit
-        const m = fbm2t(u * 3, v * 3, P * 3, 2, seed + 7);
-        col = m > 0.5 ? rampColor(R.moss, 0.35 + (m - 0.5), x, y) : rampColor(R.lime, 0.1, x, y);
-      } else {
-        // worn darker centre stains + cracks
-        const crack = Math.abs(fbm2t(u * 3 + id, v * 3, P * 3, 3, seed + 4) - 0.5);
-        if (crack < 0.012 && hashId(id, 5) < 0.4) l -= 0.3;
-        col = rampColor(R.lime, clamp(l, 0, 1), x, y);
-        const mossy = fbm2t(u * 1.5, v * 1.5, P * 1.5, 3, seed + 8);
-        if (mossy > 0.62 && edge < 8) col = rampColor(R.moss, clamp(l - 0.1, 0, 1), x, y);
+      const wob = (fbm2t(u * 5, v * 5, P * 5, 2, seed) - 0.5) * 7 + (fbm2t(u * 1.5, v * 1.5, P * 1.5, 2, seed + 3) - 0.5) * 6;
+      const yy = (y + wob + size) % size;
+      const row = rows.find((r) => yy >= r.y0 && yy < r.y0 + r.h) ?? rows[rows.length - 1];
+      const xx = (x - wob * 0.6 + size) % size;
+      let sl = row.slabs[0], lx = 0;
+      for (const s2 of row.slabs) {
+        const l2 = (((xx - s2.x0) % size) + size) % size;
+        if (l2 < s2.w) { sl = s2; lx = l2; break; }
       }
-      put(t, x, y, col);
+      const ly = yy - row.y0;
+      // distance to the slab border, with rounded (worn) corners
+      const ex = Math.min(lx, sl.w - lx), ey = Math.min(ly, row.h - ly);
+      const rc = 7;
+      const edge = ex < rc && ey < rc ? rc - Math.hypot(rc - ex, rc - ey) : Math.min(ex, ey);
+      const surf = (fbm2t(u * 5, v * 5, P * 5, 3, seed + 1) - 0.5) * 0.3;
+      const big = (fbm2t(u * 1.2, v * 1.2, P * 1.2, 2, seed + 2) - 0.5) * 0.12;
+      let l = 0.56 + (sl.tone - 0.5) * 0.3 + surf + big - (sl.sunk ? 0.1 : 0);
+      // bevel: lit from the upper left
+      if (edge < 5) {
+        const fromLeft = lx < sl.w / 2, fromTop = ly < row.h / 2;
+        const lit = (ex < ey ? (fromLeft ? 1 : -1) : (fromTop ? 1 : -1));
+        l += lit * (5 - edge) * 0.022;
+      }
+      const m = fbm2t(u * 3, v * 3, P * 3, 2, seed + 7);
+      let cd, cm;
+      if (edge < 1.8) {
+        cd = rampColor(R.lime, 0.12 + m * 0.08, x, y);
+        cm = rampColor(R.moss, 0.25 + m * 0.5, x, y);
+      } else {
+        if (sl.crack >= 0) {
+          const t = (lx / sl.w) * 1.0;
+          const cy = row.h * (0.2 + sl.crack * 0.6) + (t - 0.5) * row.h * 0.5 + (fbm2t(u * 8, v * 2, P * 8, 2, seed + 4) - 0.5) * 6;
+          if (Math.abs(ly - cy) < 0.9) l -= 0.3;
+        }
+        cd = rampColor(R.lime, clamp(l, 0, 1), x, y);
+        // damp version: moss creeps in from the joints, patchy
+        const creep = fbm2t(u * 2, v * 2, P * 2, 3, seed + 8);
+        cm = edge < 3 + creep * 9 && creep > 0.42 ? rampColor(R.moss, clamp(l - 0.12, 0, 1), x, y) : rampColor(R.lime, clamp(l - 0.05, 0, 1), x, y);
+      }
+      put(dry, x, y, cd);
+      put(damp, x, y, cm);
     }
   }
-  return toTexture(t);
+  return { dry: toTexture(dry), damp: toTexture(damp) };
 }
 
 // ---------------------------------------------------------------- masonry wall
@@ -239,6 +278,95 @@ export function masonryTexture(size = 256, seed = 51) {
     }
   }
   return toTexture(t);
+}
+
+// ------------------------------------------------------- authored wall faces
+// Coursed walling over an 8 x 4 unit tile (so a long wall repeats only every
+// 8 units, and the wall shader breaks even that). Courses vary: ordinary
+// ashlar, pairs of thin courses, the odd long stone. A second, data-only
+// texture carries each stone's id (R), distance from its top edge (G) and from
+// any edge (B) so the shader can drop out whole stones, shade the recess and
+// let cracks run across several stones.
+function coursedWall(w, h, seed, { rows: rowHs, bw, big = 0, bevel = 1, tone = 0.22, ramp = R.lime }) {
+  const t = canvas(w, h), id = canvas(w, h);
+  const rnd = mulberry32(seed);
+  const P = 4, PX = (w / h) * P;
+  const rows = [];
+  let y0 = 0;
+  while (y0 < h) {
+    let rh = rowHs[Math.floor(rnd() * rowHs.length)];
+    if (h - y0 - rh < rowHs[0]) rh = h - y0;
+    const blocks = [];
+    const start = Math.floor(rnd() * w);
+    let x0 = start;
+    while (x0 < start + w) {
+      let bwid = bw[0] + Math.floor(rnd() * (bw[1] - bw[0]));
+      if (rnd() < big) bwid = Math.floor(bwid * 1.9);
+      if (start + w - x0 - bwid < bw[0]) bwid = start + w - x0;
+      blocks.push({ x0, w: bwid, tone: rnd(), chip: rnd(), h: rnd() });
+      x0 += bwid;
+    }
+    rows.push({ y0, h: rh, blocks });
+    y0 += rh;
+  }
+  for (let y = 0; y < h; y++) {
+    const row = rows.find((r) => y >= r.y0 && y < r.y0 + r.h);
+    for (let x = 0; x < w; x++) {
+      const u = (x / w) * PX, v = (y / h) * P;
+      let b = row.blocks[0], bx = 0;
+      for (const bb of row.blocks) {
+        const lx = (((x - bb.x0) % w) + w) % w;
+        if (lx < bb.w) { b = bb; bx = lx; break; }
+      }
+      const by = y - row.y0;
+      // the tile is twice as wide as tall: sample noise with v doubled so it wraps both ways
+      const n = fbm2t(u * 6, v * 12, PX * 6, 2, seed + 3);
+      const chipN = fbm2t(u * 10, v * 20, PX * 10, 2, seed + 9);
+      const rough = (chipN - 0.5) * 5 * (0.5 + b.chip);
+      const dl = bx, dr = b.w - 1 - bx, dt = by, db = row.h - 1 - by;
+      const dmin = Math.min(dl, dr, dt, db) + rough;
+      // pillowed face: stones bulge slightly, lit from the upper left
+      const cx = (bx / b.w - 0.5) * 2, cy = (by / row.h - 0.5) * 2;
+      let l = 0.5 + (b.tone - 0.5) * tone + (n - 0.5) * 0.26 - (cx * 0.04 + cy * 0.06) * bevel;
+      if (dt + rough < 4 * bevel) l += 0.15;
+      if (dl + rough < 3 * bevel) l += 0.07;
+      if (db + rough < 4 * bevel) l -= 0.2;
+      if (dr + rough < 3 * bevel) l -= 0.1;
+      let col;
+      if (dmin < 1.6) col = rampColor(ramp, 0.06, x, y);
+      else col = rampColor(ramp, clamp(l, 0, 1), x, y, 0.9);
+      put(t, x, y, col);
+      const hb = Math.floor(hashId(Math.floor(b.x0) * 977 + row.y0 * 131 + seed) * 255);
+      put(id, x, y, [hb, Math.round(clamp(dt / 24, 0, 1) * 255), Math.round(clamp(dmin / 10, 0, 1) * 255)]);
+    }
+  }
+  const tex = toTexture(t);
+  const idt = toTexture(id);
+  idt.colorSpace = THREE.NoColorSpace;
+  idt.magFilter = THREE.NearestFilter;
+  idt.minFilter = THREE.NearestFilter;
+  idt.generateMipmaps = false;
+  return { tex, id: idt };
+}
+
+export function wallTextures() {
+  const ashlar = coursedWall(512, 256, 51, { rows: [14, 18, 22, 26, 30], bw: [26, 80], big: 0.08 });
+  // monumental: few, large, deeply bevelled blocks for foundations and the Warden's hall
+  const mon = coursedWall(512, 256, 77, { rows: [44, 52, 60], bw: [70, 170], bevel: 1.6, tone: 0.16 });
+  // rubble core exposed where facing stones have fallen
+  const t = canvas(256, 256);
+  const P = 4;
+  for (let y = 0; y < 256; y++)
+    for (let x = 0; x < 256; x++) {
+      const u = (x / 256) * P, v = (y / 256) * P;
+      const [d1, d2, cid, cx, cy] = voronoi(x, y, 18, 256, 913);
+      const edge = d2 - d1;
+      const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) + 1e-3;
+      let l = 0.36 + (hashId(cid) - 0.5) * 0.3 + (fbm2t(u * 6, v * 6, P * 6, 2, 917) - 0.5) * 0.2 + ((-dx - dy) / len) * 0.08;
+      const col = edge < 2.5 ? rampColor(R.dirt, 0.2 + fbm2t(u * 4, v * 4, P * 4, 2, 919) * 0.3, x, y) : rampColor(R.lime, clamp(l, 0, 1), x, y);
+      put(t, x, y, col);
+    }
+  return { ashlar: ashlar.tex, ashlarId: ashlar.id, mon: mon.tex, rubble: toTexture(t) };
 }
 
 // ---------------------------------------------------------------- natural cliff
@@ -406,8 +534,9 @@ export function makeTextures() {
   return {
     grass: grassTexture(),
     dirt: dirtTexture(),
-    flag: flagstoneTexture(),
+    ...(() => { const f = flagstoneTextures(); return { flag: f.dry, flagDamp: f.damp }; })(),
     masonry: masonryTexture(),
+    ...(() => { const w = wallTextures(); return { wallAshlar: w.ashlar, wallAshlarId: w.ashlarId, wallMon: w.mon, wallRubble: w.rubble }; })(),
     cliff: cliffTexture(),
     bed: bedTexture(),
     bark: barkTexture(),

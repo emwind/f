@@ -123,6 +123,161 @@ sentinel (heavy guardian: telegraphed raise, slam and ring shockwave), moth
 
 Screenshots were captured headless (software WebGL) with `tools/capture.mjs`.
 
+## Art pass 2: authored refinement
+
+A visual-only pass over the same slice. No areas, enemies, mechanics, puzzles
+or systems were added; the level grid, collision, route, camera and debug
+tools are unchanged (`node tools/reach.js` and the scripted playtests give the
+same results as before). What changed is how the existing content is drawn.
+
+![](docs/screenshots/pass2/00-strongest.jpg)
+
+**Vegetation as composition, not scatter** (`placePlants` in `decor.js`).
+Every tile is read for its niche (water edge, damp wall base, forest floor,
+meadow, dry stone, shrine). Clusters seed sparsely per niche with large-scale
+patchiness, carry big plants in the middle and small ones at the rim, and keep
+stair mouths, interactables, jump edges and enemy floors clear. Key views get
+authored clusters (`dressing` in `level.js`). Small plant instances went from
+about 3,800 to about 2,400 (37% fewer): grass tufts halved, mushrooms down 75%,
+flowers gathered into drifts, while ferns and reeds grew where water and walls
+give them a reason to.
+
+**Masonry silhouettes** (`masonryKit.js`). A small kit dressed along every
+built wall edge: coping courses (intact, worn, broken, missing) on retaining
+walls, limestone capstones with notches on free-standing walls, chunky corner
+stones, stepped collapsed wall ends with rubble, protruding stones on tall
+faces, drains over water, damp-tinted stones near water. Visual only.
+
+**Ground** (`flagstoneTextures`, `dampWearField`). Paving is now laid in
+east-west courses of long slabs with worn corners, cracks and sunken stones.
+Moss is no longer painted into every joint: a per-vertex damp field (water,
+wall bases with runoff, tree shade) blends a damp version of the paving in,
+and a wear field softens walked floors and trampled verges. The dark seam at
+grass edges is lighter and only strong where it is damp.
+
+**Hero** (`heroFrame` in `sprites.js`). Repainted at the same size: a mop of
+chestnut locks with a tied tail instead of a gold cap, a rust scarf collar
+separating head and body, indigo tunic over undyed sleeves and trousers,
+worn boots, belt pouch. New dash and falling poses, a wince on hurt, a lean on
+attack and dash, and hair tail and scarf that sway per frame.
+
+**Trees.** Crowns are 2 to 5 separate masses carried on visible limbs at
+different heights and reaches, each a tight knot of clumps (big centre, small
+rim, darker underneath and behind), with varied trunk heights.
+
+**Area light** (`MOODS` in `main.js`). The sun keeps its angle; colour,
+intensity, sky fill, ravine depth tint and sprite light blend by area: cool
+forest shade with warm sun patches, open warm courtyard, high-contrast
+sanctuary with cool ravine shadow, bluer and darker shrine with warmer
+braziers, a brighter and readable Warden's chamber, a brighter vale.
+
+**Water.** Broad water darkens toward its middle, a thin wet line runs along
+every shore, and foam only appears where water moves: under the falls and in
+narrow channels.
+
+| Before / after | |
+| --- | --- |
+| ![](docs/screenshots/pass2/01-forest.jpg) Forest Approach | ![](docs/screenshots/pass2/02-forest-bridge.jpg) Arch bridge |
+| ![](docs/screenshots/pass2/03-courtyard.jpg) Ruined Courtyard | ![](docs/screenshots/pass2/04-waterfall.jpg) Sanctuary waterfall |
+| ![](docs/screenshots/pass2/05-ravine-bridge.jpg) Ravine bridge | ![](docs/screenshots/pass2/06-combat.jpg) Combat |
+| ![](docs/screenshots/pass2/07-shrine.jpg) Underground Shrine | ![](docs/screenshots/pass2/08-warden.jpg) Warden's Chamber |
+| ![](docs/screenshots/pass2/09-vale.jpg) Hidden Vale | ![](docs/screenshots/pass2/10-sanctuary-court.jpg) Sanctuary court |
+| ![](docs/screenshots/pass2/11-hero-close.jpg) Hero close-up | ![](docs/screenshots/pass2/13-hero-sheet-front.jpg) Hero frames |
+
+**Still short of the target:** wall faces themselves are still one tiled
+texture (the kit fixes edges, not faces); canopy clumps are still the same six
+painted cards; the sentinel and slime were not repainted; some open lawns now
+read a little empty; light moods follow the player rather than being lit
+volumes, so a distant area is shown in the current area's light.
+
+## Art pass 3: cohesion and art direction
+
+A final visual pass with the same rule as pass 2: depth, not breadth. No
+areas, enemies, mechanics, puzzles, bosses or rendering technology were added,
+and collision is unchanged. `node tools/reach.js` gives the same 35 reachable
+targets and the same two closed ones, and every scripted playtest passes
+(movement, sunstones, grate, vessel and secret crack, all four enemy types,
+death and respawn, the Warden fight to the open vale door, and the vale ending).
+The only logic-adjacent additions are visual timers (`landT` on the player and
+slime, `awake` on the thornbulb) and per-enemy death effects.
+
+![](docs/screenshots/pass3/00-strongest.jpg)
+
+**Wall faces** (`coursedWall` in `textures.js`, `wallMaterial` and
+`wallStateFn` in `world.js`). Wall fronts are no longer one tiled texture. Two
+coursed-stone textures (ashlar and monumental) carry an id map per stone; a
+shader picks a foundation course of big blocks at the foot of each bay, drops
+individual stones to exposed rubble with recessed shading, draws cracks across
+stones, drifts the value at large scale and adds wet darkening, runoff
+streaks, moss along the water paths and pale mineral bloom. A condition field
+per location (`L.wallWear` boxes over area defaults) decides how intact,
+damaged, collapsed or wet a wall is: soaked lower courses at the falls, a crisp
+temple front, failed facing on the aqueduct supports, a collapsed precinct
+corner, the stone ring swallowed by the forest, cold crisp stone in the shrine
+and monumental blocks in the Warden's chamber. Faces turned away from the sun
+get a per-area bounce light so they read as stone instead of black.
+
+**Enemies** (`sprites.js`, draw code in `entities.js`).
+- Slime: a lopsided lump of pond mud with a slipping moss cap, a stone in its
+  flank, a root sprig and a murky core. Squash before the hop, stretch on the
+  way up, a falling shape, a held landing compression with thrown drops, and
+  a mud-and-moss splat when it dies.
+- Thornbulb: rooted into the ground with a leaf rosette. It droops while
+  dormant, raises its bud when the player comes near, shivers, swells with the
+  seed glowing through, then fires and recoils. Two petal variants by position.
+- Sentinel: built from the sanctuary's masonry (plinth feet, drum legs and
+  arms, ashlar torso with a carved sun panel, a lintel for shoulders and the
+  head sunk between them), with cracks, lichen and moss. A four-step walk with
+  a lifted foot and a contact frame, a raise that lifts the whole stack, and a
+  slam that drops it and drives both fists into the ground with dust.
+- Moth: hooked indigo forewings with a pale margin, rust tailed hindwings, a
+  four-frame wingbeat with the body rising on the downstroke, a glide frame
+  for the swoop and banking by direction.
+- Root Warden: a fallen shrine roof of fitted slabs on a body of roots, root
+  legs under stone pauldrons, a gold-masked head below a heavy brow. Phase two
+  shows lost slabs, a cracked mask and a snapped antler; the death collapses
+  into a dedicated frame and sinks.
+
+**Hero second pass.** Launch, apex and falling jump poses, a landing crouch,
+bent knees on lifted legs, a lower and longer dash with the scarf streaming,
+a thrown-back hurt pose and a four-frame attack (anticipation, strike,
+follow-through, recovery). Same size, few frames, stronger key poses.
+
+**Authored large forms** (`L.forms` in `level.js`). Empty stretches got
+subjects instead of scatter: leaf litter drifts and root masses in the forest,
+heaved paving and fallen blocks under the aqueduct and in the sanctuary court,
+a broken statue, moss fields, fern and flower banks, and one plant found
+nowhere else, the sun lily, by the sanctuary water. All visual, no collision.
+
+**Trees.** Canopy cards are painted as a few leaf sprays with a heavy side,
+a drooping edge and sky holes instead of round balls. Roots flare from the
+trunk and dive into the soil, and every tree sits on a painted root mass.
+
+**Ground, water and light.** A broad noise lets grass and bare earth trade
+ground in drifts instead of along the tile grid. The shrine hall and the
+Warden arena lost their random dirt blotches; the arena floor is whole except
+where the Warden's roots broke through behind it. The shrine channel reflects a
+dark vault instead of the sky, and the vale basin sinks into a darker, cooler
+depth so the drowned tower reads.
+
+| Pass 1 / pass 2 / pass 3 | |
+| --- | --- |
+| ![](docs/screenshots/pass3/01-forest.jpg) Forest Approach | ![](docs/screenshots/pass3/02-forest-bridge.jpg) Arch bridge |
+| ![](docs/screenshots/pass3/03-courtyard.jpg) Ruined Courtyard | ![](docs/screenshots/pass3/04-waterfall.jpg) Sanctuary waterfall |
+| ![](docs/screenshots/pass3/05-ravine-bridge.jpg) Ravine bridge | ![](docs/screenshots/pass3/06-combat.jpg) Combat |
+| ![](docs/screenshots/pass3/07-shrine.jpg) Underground Shrine | ![](docs/screenshots/pass3/08-warden.jpg) Warden's Chamber |
+| ![](docs/screenshots/pass3/09-vale.jpg) Hidden Vale | ![](docs/screenshots/pass3/10-sanctuary-court.jpg) Sanctuary court |
+| ![](docs/screenshots/pass3/11-hero-close.jpg) Hero close-up | ![](docs/screenshots/pass3/12-enemies.jpg) Enemy frames |
+
+**Performance** (SwiftShader, 1280x720 headless): 410 to 675 draw calls and
+about 300k triangles per frame depending on area, 3.4 to 4.2 ms per render,
+18 textures. The wall shader adds texture reads on wall faces only.
+
+**Weakest view:** the forest
+(![](docs/screenshots/pass3/99-weakest.jpg)). The canopy still covers too much
+of the frame from this camera, the crowns are still assembled from six painted
+cards, and the ground reads as noise more than as paths and clearings.
+
 ## What is 2D and what is 3D
 
 **3D (real geometry, lit and shadowed):** terrain, cliffs and retaining walls,
@@ -287,6 +442,7 @@ atlas.html          dev view of the generated sprite atlas (?s=scale)
 src/main.js         renderer, game loop, maps, camera, HUD, debug, flow
 src/level.js        overworld, shrine and vale layouts; cutaway walls
 src/world.js        terrain / wall / stair / solid meshes, water, collider
+src/masonryKit.js   authored wall-edge kit: coping, capstones, corners, ruins
 src/decor.js        trees, props, plant scatter, waterfall, backdrop, sprite tint
 src/sprites.js      procedural pixel-art painter and atlas
 src/billboard.js    instanced sprite batches

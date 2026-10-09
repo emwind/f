@@ -13,7 +13,7 @@
 //   z 18-45  Underground Shrine: grand stair, pillared hall, galleries, channel
 //   z  0-17  Warden's Chamber, and the sealed doorway to what lies beyond
 
-import { fbm2, value2 } from './noise.js';
+import { fbm2, value2, smoothstep } from './noise.js';
 
 export const T = { GRASS: 0, DIRT: 1, FLAG: 2, WATER: 3, ROCK: 4, ROOT: 5 };
 export const WATER_DEPTH = 0.37; // water surface sits this far above the bed
@@ -66,6 +66,112 @@ function painter(W, D) {
       }
   };
   return { W, D, H, TY, MAS, stairs, idx, fill, typeAt, stair, ok };
+}
+
+
+// ---------------------------------------------------------------------
+// The forest floor, authored as a few large shapes rather than tile noise
+// (Pass 4). Paths are the walked route; the blobs are clearings (open, lit,
+// nothing grows tall), moss beds, leaf-litter drifts under the old trees,
+// damp ground at cliff feet, and banks: dense fern and shrub masses that
+// hold the edges so the route between them reads without UI. The ground
+// shader, the dappled-light pattern and the plant scatter all read these.
+const ridgePath = [];
+for (let x = 2; x <= 30; x += 2) ridgePath.push([x + 0.5, Math.round(79.5 + Math.sin(x * 0.25) * 1.5) + 1.0]);
+export const FOREST_FLOOR = {
+  z0: 63.5,
+  paths: [
+    { pts: [...ridgePath, [31.6, 78.0], [33.8, 78.0]], w: 1.35 },
+    {
+      pts: [[33.8, 78.0], [35.2, 75.6], [34.6, 72.7], [30.0, 71.8], [24.0, 71.6], [19.0, 71.9], [14.5, 71.6], [10.6, 71.0], [7.9, 69.2], [7.7, 66.6], [9.6, 64.9], [12.5, 64.3], [14.5, 63.4]],
+      w: 1.4,
+    },
+    // spurs: to the ruined glade, and up the ridge to the arch bridge
+    { pts: [[34.6, 72.7], [37.2, 70.4], [40.2, 68.9]], w: 0.95, wear: 0.75 },
+    { pts: [[14.5, 79.6], [14.7, 76.6], [14.5, 74.4]], w: 0.9, wear: 0.8 },
+  ],
+  // sun patches: where the upper canopy opens. They fall on the clearings,
+  // the stele, the bends and landmarks of the route (x, z, ground y, radius)
+  sun: [
+    [8.0, 80.6, 7, 2.3], [17.6, 79.6, 7, 1.2], [14.6, 75.8, 7, 1.2], [14.7, 67.3, 7, 2.1], [24.6, 80.8, 7, 1.0],
+    [31.6, 78.2, 5.5, 1.5], [39.2, 76.4, 4, 2.5], [40.4, 67.6, 4.6, 2.0], [24.2, 71.6, 4, 1.1], [29.4, 71.8, 4, 0.8],
+    [6.0, 69.8, 4, 1.7], [10.0, 64.6, 4, 1.4], [43.6, 84.0, 4, 1.2], [3.4, 82.8, 7, 1.0], [35.0, 74.2, 4, 0.9],
+  ],
+  blobs: [
+    // clearings: the start glade, the eastern glade below the ridge stair,
+    // the bend where the lower path turns north
+    { kind: 'clear', x: 8.0, z: 80.4, rx: 2.8, rz: 2.0 },
+    { kind: 'clear', x: 39.2, z: 76.6, rx: 3.2, rz: 2.4 },
+    { kind: 'clear', x: 5.6, z: 69.6, rx: 2.0, rz: 2.2 },
+    { kind: 'clear', x: 14.7, z: 67.3, rx: 2.4, rz: 1.8 },
+    // moss beds
+    { kind: 'moss', x: 25.2, z: 82.8, rx: 2.8, rz: 1.6, a: 0.2 },
+    { kind: 'moss', x: 2.8, z: 71.8, rx: 1.8, rz: 3.0 },
+    { kind: 'moss', x: 42.6, z: 81.8, rx: 2.6, rz: 1.8, a: -0.3 },
+    { kind: 'moss', x: 37.4, z: 72.4, rx: 1.9, rz: 1.3 },
+    { kind: 'moss', x: 19.0, z: 84.2, rx: 2.4, rz: 1.4 },
+    { kind: 'moss', x: 29.6, z: 74.0, rx: 2.0, rz: 0.9 },
+    // leaf litter drifts under the broadleaves
+    { kind: 'litter', x: 4.4, z: 77.6, rx: 2.8, rz: 2.0, a: 0.4 },
+    { kind: 'litter', x: 10.8, z: 83.4, rx: 3.0, rz: 1.9 },
+    { kind: 'litter', x: 20.8, z: 77.6, rx: 2.8, rz: 1.8, a: -0.3 },
+    { kind: 'litter', x: 44.0, z: 79.0, rx: 2.4, rz: 2.2 },
+    { kind: 'litter', x: 33.4, z: 81.4, rx: 2.0, rz: 1.4 },
+    // damp ground: the cold strip at the ridge's foot, the hollows under the
+    // ravine trees
+    { kind: 'damp', x: 23.0, z: 73.3, rx: 6.0, rz: 0.9 },
+    { kind: 'damp', x: 4.4, z: 73.2, rx: 2.6, rz: 0.8 },
+    { kind: 'damp', x: 40.6, z: 71.6, rx: 2.2, rz: 1.3 },
+    { kind: 'damp', x: 5.8, z: 67.4, rx: 1.6, rz: 1.4 },
+    { kind: 'damp', x: 27.8, z: 83.8, rx: 1.6, rz: 1.2 },
+    // banks: fern and shrub masses holding the edges and the knoll
+    { kind: 'bank', x: 2.0, z: 67.5, rx: 1.3, rz: 3.6 },
+    { kind: 'bank', x: 2.2, z: 84.4, rx: 1.6, rz: 2.8 },
+    { kind: 'bank', x: 23.2, z: 75.0, rx: 4.6, rz: 0.75 },
+    { kind: 'bank', x: 45.0, z: 72.0, rx: 1.3, rz: 5.0 },
+    { kind: 'bank', x: 45.0, z: 83.0, rx: 1.3, rz: 3.4 },
+    { kind: 'bank', x: 25.5, z: 66.4, rx: 6.4, rz: 2.0 },
+    { kind: 'bank', x: 10.0, z: 87.6, rx: 5.0, rz: 1.4 },
+    { kind: 'bank', x: 30.0, z: 87.4, rx: 6.0, rz: 1.3 },
+    { kind: 'bank', x: 43.4, z: 87.2, rx: 3.0, rz: 1.4 },
+    { kind: 'bank', x: 36.4, z: 65.2, rx: 1.4, rz: 1.0 },
+    // the ridge's back slope, off the route: fern masses under the old trees
+    { kind: 'bank', x: 16.6, z: 85.0, rx: 4.0, rz: 1.1 },
+    { kind: 'bank', x: 36.6, z: 84.8, rx: 3.2, rz: 1.1 },
+    { kind: 'bank', x: 5.0, z: 85.4, rx: 2.4, rz: 0.9 },
+  ],
+};
+
+// Sampler for an authored floor: returns the strength of every kind at a
+// point. Rims are wobbled with noise so the shapes are organic, never tiles.
+export function floorField(L) {
+  const F = L.floor;
+  if (!F) return null;
+  const segs = F.paths.map((p) => ({ ...p, s: p.pts.slice(1).map((b, i) => [p.pts[i], b]) }));
+  const segD = (x, z, [a, b]) => {
+    const vx = b[0] - a[0], vz = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz)));
+    return Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
+  };
+  return (x, z) => {
+    const out = { path: 0, moss: 0, litter: 0, damp: 0, bank: 0, clear: 0 };
+    if (z < F.z0) return out;
+    const wob = fbm2(x * 0.55, z * 0.55, 3, 91) - 0.5;
+    const wobB = fbm2(x * 0.32 + 4, z * 0.32, 3, 93) - 0.5;
+    for (const p of segs) {
+      let d = 1e9;
+      for (const sg of p.s) d = Math.min(d, segD(x, z, sg));
+      const v = 1 - smoothstep(p.w * 0.5, p.w, d + wob * 0.6 * p.w);
+      out.path = Math.max(out.path, v * (p.wear ?? 1));
+    }
+    for (const b of F.blobs) {
+      const dx = x - b.x, dz = z - b.z, c = Math.cos(b.a ?? 0), s = Math.sin(b.a ?? 0);
+      const u = (dx * c + dz * s) / b.rx, v = (-dx * s + dz * c) / (b.rz ?? b.rx);
+      const k = 1 - smoothstep(0.6, 1.0, Math.hypot(u, v) + wobB * 0.7);
+      if (k > out[b.kind]) out[b.kind] = k;
+    }
+    return out;
+  };
 }
 
 // =====================================================================
@@ -238,8 +344,6 @@ export function buildOverworld() {
 
   // ================= FOREST APPROACH (z 64-85) ========================
   fill(1, 64, 46, D - 1, 4, T.GRASS, 0);
-  for (let z = 64; z < D; z++)
-    for (let x = 1; x <= 46; x++) if (fbm2(x * 0.22 + 7, z * 0.22, 3, 44) > 0.56) TY[idx(x, z)] = T.DIRT;
   // ridge (7) where the journey starts, organic north edge
   for (let x = 1; x <= 30; x++) {
     const n = fbm2(x * 0.3, 70, 3, 51);
@@ -260,9 +364,15 @@ export function buildOverworld() {
   // ruins in the east glade
   fill(38, 66, 43, 68, 4.6, T.FLAG, 1);
   fill(39, 67, 42, 67, 4.6, T.FLAG, 1);
-  typeAt(1, 64, 11, 73, T.DIRT, 4);
-  typeAt(12, 64, 17, 64, T.DIRT, 4);
-  typeAt(18, 70, 33, 73, T.DIRT, 4);
+  // the forest floor is authored as large shapes (FOREST_FLOOR below); the
+  // walked ground follows its paths instead of a tile pattern
+  const ff = floorField({ floor: FOREST_FLOOR });
+  for (let z = 64; z < D; z++)
+    for (let x = 1; x <= 46; x++) {
+      const i = idx(x, z);
+      if (P.stairs.has(i) || (TY[i] !== T.GRASS && TY[i] !== T.DIRT)) continue;
+      TY[i] = ff(x + 0.5, z + 0.5).path > 0.5 ? T.DIRT : T.GRASS;
+    }
 
   // ---------------------------------------------------------- borders
   for (let z = 0; z < D; z++) {
@@ -319,25 +429,27 @@ export function buildOverworld() {
     { x: 33.8, z: 45.5, size: 'small' },
     { x: 12.0, z: 43.5, size: 'small' },
     { x: 37.5, z: 62.5 },
-    // forest
-    { x: 4.5, z: 76.5, size: 'big' },
-    { x: 10.5, z: 83.0, size: 'big' },
-    { x: 20.5, z: 77.0, size: 'big' },
-    { x: 27.5, z: 83.2, size: 'big' },
-    { x: 15.0, z: 80.5 },
-    { x: 30.5, z: 66.0 },
-    { x: 37.0, z: 72.5, size: 'big' },
-    { x: 44.0, z: 78.5, size: 'big' },
-    { x: 41.0, z: 83.5, size: 'big' },
-    { x: 35.5, z: 81.0 },
-    { x: 6.0, z: 67.0 },
-    { x: 44.5, z: 65.5 },
-    // the skirt in front of the camera
-    { x: 3.0, z: 88.5, size: 'big' },
-    { x: 13.5, z: 89.5, size: 'big' },
-    { x: 22.0, z: 88.0, size: 'big' },
-    { x: 33.0, z: 89.0, size: 'big' },
-    { x: 41.5, z: 88.5, size: 'big' },
+    // forest: three families. Old broadleaves hold the edges and frame the
+    // ridge, weeping ravine trees lean over the low damp ground, young growth
+    // fills the gaps the old trees left. Crowns sit clear of the route.
+    { x: 4.5, z: 76.5, size: 'big', species: 'broadleaf', heavy: -1 },
+    { x: 10.5, z: 83.0, size: 'big', species: 'ravine', lean: -0.4, crown: 0.85 },
+    { x: 20.5, z: 77.0, size: 'big', species: 'broadleaf', heavy: 1, crown: 0.85 },
+    { x: 27.5, z: 83.2, size: 'big', species: 'ravine', lean: 0.3 },
+    { x: 15.0, z: 80.5, species: 'young' },
+    { x: 30.5, z: 66.0, species: 'young' },
+    { x: 37.0, z: 72.5, size: 'big', species: 'ravine', lean: 0.35 },
+    { x: 44.0, z: 78.5, size: 'big', species: 'broadleaf', heavy: 1 },
+    { x: 41.0, z: 83.5, size: 'big', species: 'ravine', lean: -0.3 },
+    { x: 35.5, z: 81.0, species: 'young' },
+    { x: 6.0, z: 67.0, species: 'ravine', lean: 0.3 },
+    { x: 44.5, z: 65.5, species: 'young' },
+    // the skirt in front of the camera: dark framing crowns at the bottom edge
+    { x: 3.0, z: 88.5, size: 'big', species: 'broadleaf', frame: true, crown: 0.85 },
+    { x: 13.5, z: 89.5, size: 'big', species: 'ravine', frame: true, crown: 0.8 },
+    { x: 22.0, z: 88.0, size: 'big', species: 'young', frame: true },
+    { x: 33.0, z: 89.0, size: 'big', species: 'broadleaf', frame: true, crown: 0.85 },
+    { x: 41.5, z: 88.5, size: 'big', species: 'ravine', frame: true, crown: 0.8 },
   ];
 
   const props = [
@@ -349,7 +461,7 @@ export function buildOverworld() {
     { type: 'relief', x0: 11.2, x1: 14.85, z: 3.0, y: 5.5, h: 1.3 },
     { type: 'relief', x0: 17.15, x1: 20.8, z: 3.0, y: 5.5, h: 1.3 },
     { type: 'statue', x: 8.3, z: 19.4, scale: 0.85 },
-    { type: 'statue', x: 12.7, z: 19.4, scale: 0.85 },
+    { type: 'statue', x: 12.7, z: 19.4, scale: 0.85, broken: true },
     { type: 'column', x: 39.3, z: 4.3, h: 2.6 },
     { type: 'column', x: 43.7, z: 4.3, h: 1.0 },
     { type: 'column', x: 39.3, z: 8.7, h: 1.6 },
@@ -438,8 +550,91 @@ export function buildOverworld() {
   ];
   const waterfalls = [{ x0: 31.0, x1: 34.0, z: 3.06, y0: -0.1, y1: 8.0 }];
 
+  // authored plant compositions: frames for the key views, placed before the
+  // niche scatter fills in around them
+  const dressing = [
+    // forest start: ferns frame the first path, a dark thicket on the left
+    { x: 2.6, z: 77.2, niche: 'forest', r: 1.8 },
+    { x: 12.4, z: 76.4, niche: 'forest', r: 1.3 },
+    { x: 9.2, z: 84.6, niche: 'forest', r: 2.0, density: 0.8 },
+    // the ring of fallen stones in the clearing is overgrown inside
+    { x: 14.9, z: 67.4, niche: 'wall', r: 1.1, density: 1.3 },
+    { x: 20.0, z: 66.6, niche: 'forest', r: 1.5 },
+    { x: 35.4, z: 66.0, niche: 'forest', r: 1.4 },
+    // courtyard: a flowering lawn to the east, a drift in the foreground
+    { x: 40.5, z: 57.5, niche: 'meadow', r: 2.2, density: 1.1 },
+    { x: 45.0, z: 61.4, niche: 'meadow', r: 1.3 },
+    { x: 7.5, z: 61.0, niche: 'meadow', r: 1.8 },
+    { x: 27.2, z: 61.3, niche: 'meadow', r: 1.0, density: 1.2 },
+    // the ravine: reeds and ferns where the river meets the banks
+    { x: 16.0, z: 20.6, niche: 'water', r: 1.2 },
+    { x: 22.6, z: 21.2, niche: 'water', r: 1.0 },
+    { x: 36.6, z: 22.4, niche: 'water', r: 1.3 },
+    // sanctuary meadows: a flower patch on the east terrace, ferns in the
+    // shade of the giant tree, a weed line along the court's north wall
+    { x: 40.0, z: 14.6, niche: 'meadow', r: 1.6, density: 1.2 },
+    { x: 42.5, z: 10.4, niche: 'forest', r: 1.3 },
+    { x: 21.5, z: 10.6, niche: 'meadow', r: 1.1 },
+    { x: 26.0, z: 8.0, niche: 'wall', r: 1.0 },
+    // the waterfall's upper banks
+    { x: 29.4, z: 9.5, niche: 'water', r: 1.0 },
+    { x: 35.5, z: 14.2, niche: 'water', r: 1.1 },
+  ];
+
+  // authored large forms (see decor.js and masonryKit.js): the subjects of
+  // otherwise empty stretches. Visual only; nothing here collides.
+  const forms = [
+    // forest: the old wood is swallowing its ruins; litter drifts under the
+    // big trees and their roots crawl out over the floor
+    { kind: 'roots', x: 20.5, z: 77.6, s: 1.2, angle: 0.4 },
+    { kind: 'roots', x: 37.0, z: 73.1, s: 1.1, v: 1, angle: -0.3 },
+    { kind: 'roots', x: 4.5, z: 77.0, s: 1.0, v: 1, angle: 1.2 },
+    { kind: 'litter', x: 23.5, z: 79.4, s: 1.4, angle: 0.3 },
+    { kind: 'litter', x: 33.5, z: 76.2, s: 1.2, v: 1, angle: -0.6 },
+    { kind: 'litter', x: 10.0, z: 80.8, s: 1.3, angle: 2.0 },
+    { kind: 'litter', x: 41.5, z: 80.6, s: 1.3, v: 1, angle: 0.9 },
+    { kind: 'fallen', x: 17.6, z: 66.4, r: 0.8, n: 4 },
+    { kind: 'moss', x: 14.6, z: 67.6, s: 1.1, v: 2 },
+    // courtyard: ceremonial paving still mostly whole; where the aqueduct
+    // failed, blocks fell and the slabs below it heaved
+    { kind: 'slabs', x: 32.0, z: 56.4, r: 0.9, n: 5 },
+    { kind: 'slabs', x: 15.6, z: 47.8, r: 0.7, n: 4 },
+    { kind: 'fallen', x: 14.6, z: 53.8, r: 0.6, n: 4 },
+    { kind: 'fallen', x: 31.4, z: 53.7, r: 0.6, n: 3 },
+    { kind: 'litter', x: 41.0, z: 60.6, s: 1.1, v: 1, angle: 0.5 },
+    // sanctuary: the upper meadows by the falls and the court before the door
+    { kind: 'lily', x: 27.9, z: 10.6 },
+    { kind: 'moss', x: 26.2, z: 9.0, s: 1.2, v: 1, angle: 0.5 },
+    { kind: 'fallen', x: 24.9, z: 10.9, r: 0.7, n: 5 },
+    { kind: 'moss', x: 39.8, z: 10.6, s: 1.3, angle: 1.4 },
+    { kind: 'fallen', x: 44.6, z: 9.6, r: 0.6, n: 4 },
+    { kind: 'roots', x: 44.0, z: 12.4, s: 1.4, angle: 0.2 },
+    { kind: 'litter', x: 19.0, z: 11.0, s: 1.0, angle: 1.0 },
+    { kind: 'slabs', x: 10.4, z: 8.2, r: 0.9, n: 6 },
+    { kind: 'slabs', x: 22.6, z: 8.8, r: 0.6, n: 3 },
+    { kind: 'roots', x: 9.6, z: 31.0, s: 1.2, v: 1, angle: 0.8 },
+  ];
+
+  // authored wall history (see wallStateFn in world.js): cond 0 intact .. 1 collapsed
+  const wallWear = [
+    // the waterfall: soaked, eroded lower courses
+    { x0: 28, z0: 0, x1: 37, z1: 9, cond: 0.55, wet: 1 },
+    // the temple front behind the shrine door stays crisp and carved
+    { x0: 6, z0: 0, x1: 26, z1: 4.5, cond: 0.12 },
+    // the aqueduct's supports have lost their facing in places
+    { x0: 14, z0: 48, x1: 31, z1: 51, cond: 0.78 },
+    // a collapsed corner of the courtyard's west precinct
+    { x0: 2, z0: 44, x1: 7, z1: 48, cond: 0.9 },
+    // the ring of fallen stones in the forest clearing
+    { x0: 11.5, z0: 64.5, x1: 18, z1: 70, cond: 1 },
+  ];
+
   return {
     id: 'overworld',
+    floor: FOREST_FLOOR,
+    dressing,
+    forms,
+    wallWear,
     ...P,
     walkMaxZ: 86,
     solids,
@@ -615,8 +810,9 @@ export function buildShrine() {
   stair(12, 34, 17, 39, 's', 0, 4);
   // main hall (0)
   fill(3, 18, 26, 33, 0, T.FLAG, 1);
-  for (let z = 18; z <= 33; z++)
-    for (let x = 3; x <= 26; x++) if (fbm2(x * 0.3, z * 0.3, 3, 71) > 0.62) TY[idx(x, z)] = T.DIRT;
+  // the hall floor has settled and cracked, but nothing grows through it
+  // except one breach by the west gallery where the channel seeps
+  typeAt(6, 27, 7, 28, T.DIRT);
   // side galleries (2) with their stairs
   fill(1, 19, 4, 33, 2, T.FLAG, 1);
   fill(25, 19, 28, 33, 2, T.FLAG, 1);
@@ -630,8 +826,12 @@ export function buildShrine() {
   // boss door wall, then the Warden's chamber (0)
   fill(13, 16, 16, 17, 0, T.FLAG, 1);
   fill(7, 2, 23, 15, 0, T.FLAG, 1);
-  for (let z = 2; z <= 15; z++)
-    for (let x = 7; x <= 23; x++) if (fbm2(x * 0.35, z * 0.35, 3, 83) > 0.6) TY[idx(x, z)] = T.DIRT;
+  // the arena floor stays whole except where the Warden's roots broke up
+  // through it, behind where it sleeps
+  typeAt(10, 4, 11, 5, T.DIRT);
+  typeAt(12, 4, 12, 4, T.DIRT);
+  typeAt(18, 4, 20, 4, T.DIRT);
+  typeAt(19, 5, 19, 5, T.DIRT);
   // raised ledges around the arena
   fill(7, 2, 8, 15, 1, T.FLAG, 1);
   fill(22, 2, 23, 15, 1, T.FLAG, 1);
@@ -705,6 +905,16 @@ export function buildShrine() {
     waterfalls: [],
     spawn: { x: 14.5, z: 42.2, dir: 'up' },
     theme: 'shrine',
+    // the vault: the hall gets no sky except one cold shaft falling through a
+    // collapsed coffer, slanting across the channel east of the bridge and up
+    // the foot of the carved column; the Warden's chamber keeps its opening
+    ceiling: {
+      y: 9.5,
+      openings: [
+        { y: 0, pts: [[15.9, 28.6], [18.3, 28.9], [20.6, 21.0], [18.6, 20.4]], chips: 18, beam: true },
+        { y: 0, pts: [[10.2, 4.6], [19.8, 4.4], [20.2, 12.6], [9.8, 12.8]], chips: 22 },
+      ],
+    },
   };
 }
 

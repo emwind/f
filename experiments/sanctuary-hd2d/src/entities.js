@@ -233,6 +233,8 @@ export class Player {
     const wasAir = !this.grounded;
     const fallV = this.vy;
     const landed = verticalStep(G, this, dt);
+    // visual only: a short landing crouch after a real fall
+    this.landT = landed && wasAir && fallV < -4 ? 0.16 : Math.max(0, (this.landT ?? 0) - dt);
     if (landed) {
       this.airDash = true;
       if (wasAir && fallV < -6) {
@@ -310,10 +312,17 @@ export class Player {
       f = 0;
     } else if (this.attackT > 0) {
       anim = 'atk';
-      f = Math.min(2, Math.floor((0.3 - this.attackT) / 0.1));
-    } else if (!this.grounded || this.dashT > 0) {
-      anim = 'jump';
+      const t = 0.3 - this.attackT;
+      f = t < 0.05 ? 0 : t < 0.13 ? 1 : t < 0.22 ? 2 : 3;
+    } else if (this.dashT > 0) {
+      anim = 'dash';
       f = 0;
+    } else if (!this.grounded) {
+      anim = 'jump';
+      f = this.vy > 2.5 ? 0 : this.vy > -2.5 ? 1 : 2;
+    } else if (this.landT > 0) {
+      anim = 'land';
+      f = this.landT > 0.07 ? 0 : 1;
     } else if (len2(this.vx, this.vz) > 1) {
       anim = 'walk';
       f = Math.floor(this.anim) % 4;
@@ -323,7 +332,7 @@ export class Player {
     const alpha = this.dead ? Math.max(0, 1 - this.deadT * 0.8) : 1;
     // afterimages while dashing: a couple of cool, dithered copies
     for (const a of this.after) {
-      G.actors.add({ rect: `hero.${a.dir}.jump.0`, x: a.x, y: a.y - 0.06, z: a.z, w: 1.2, h: 1.8, flip: a.flip, tint: [0.45, 0.55, 0.75, a.t * 3] });
+      G.actors.add({ rect: `hero.${a.dir}.dash.0`, x: a.x, y: a.y - 0.06, z: a.z, w: 1.2, h: 1.8, flip: a.flip, tint: [0.45, 0.55, 0.75, a.t * 3] });
     }
     G.actors.add({
       rect: `hero.${dir}.${anim}.${f}`,
@@ -383,8 +392,11 @@ class Creature {
   die(G) {
     this.alive = false;
     G.sfx('die');
-    for (let i = 0; i < 4; i++) G.spawnFx('puff', this.x + (Math.random() - 0.5) * 0.6, this.y + 0.2 + Math.random() * 0.4, this.z + (Math.random() - 0.5) * 0.4);
+    this.dieFx(G);
     if (Math.random() < 0.3) G.spawnPickup('heart', this.x, this.z);
+  }
+  dieFx(G) {
+    for (let i = 0; i < 4; i++) G.spawnFx('puff', this.x + (Math.random() - 0.5) * 0.6, this.y + 0.2 + Math.random() * 0.4, this.z + (Math.random() - 0.5) * 0.4);
   }
   baseUpdate(dt, G) {
     this.t += dt;
@@ -442,14 +454,21 @@ export class Slime extends Creature {
     }
     if (!this.grounded) moveWithCollision(G, this, this.hdx * dt, this.hdz * dt, 0.3, 0.6);
     const landed = verticalStep(G, this, dt);
+    // visual only: hold the landing squash for a beat
+    this.landT = landed ? 0.13 : Math.max(0, (this.landT ?? 0) - dt);
     if (landed && this.near(G, 9)) G.sfx('blop', this);
+  }
+  dieFx(G) {
+    G.spawnFx('splat', this.x, this.y + 0.02, this.z);
+    for (let i = 0; i < 2; i++) G.spawnFx('puff', this.x + (Math.random() - 0.5) * 0.6, this.y + 0.2, this.z + (Math.random() - 0.5) * 0.3);
   }
   draw(G) {
     const tint = litTint(G, this, [0, 0, 0, 1], 0.35);
     let rect = `slime.idle.${Math.floor(this.t * 2.5) % 2}`;
     if (this.hurtT > 0) rect = 'slime.hurt.0';
     else if (!this.grounded) rect = this.vy > 1 ? 'slime.hop.1' : 'slime.hop.2';
-    else if (this.hopT < 0.15) rect = 'slime.hop.0';
+    else if (this.landT > 0) rect = 'slime.hop.3';
+    else if (this.hopT < 0.22) rect = 'slime.hop.0';
     G.actors.add({ rect, x: this.x, y: this.y - 0.05, z: this.z, w: 1.07, h: 0.93, tint, cast: true, flash: this.flashT > 0 ? 0.8 : 0 });
     contactShadow(G, this, 0.8);
   }
@@ -470,6 +489,7 @@ export class Bulb extends Creature {
     this.kx = this.kz = 0;
     const P = G.player;
     const awake = this.near(G, 8.5) && Math.abs(P.y - this.y) < 2.6;
+    this.awake = awake;
     if (!awake) {
       this.cycle = 0;
       this.open = 0;
@@ -488,10 +508,19 @@ export class Bulb extends Creature {
   }
   draw(G) {
     const tint = litTint(G, this, [0, 0, 0, 1], 0.6);
-    G.actors.add({ rect: `bulb.${this.open ?? 0}`, x: this.x, y: this.y - 0.05, z: this.z, w: 1.2, h: 1.33, tint, cast: true, flash: this.flashT > 0 ? 0.8 : 0, sway: this.open ? 0 : 0.03 });
+    // dormant -> alert when the player comes near -> swelling -> fired
+    const stage = !this.awake ? 0 : this.open === 2 ? 3 : this.open === 1 ? 2 : 1;
+    const v = (Math.floor(this.def.x * 7 + this.def.z * 13) & 1) ? 'b' : 'a';
+    const shiver = stage === 1 && this.cycle > 1.0 ? Math.sin(this.t * 55) * 0.025 : 0;
+    G.actors.add({ rect: `bulb.${v}.${stage}`, x: this.x + shiver, y: this.y - 0.05, z: this.z, w: 1.2, h: 1.33, tint, cast: true, flash: this.flashT > 0 ? 0.8 : 0, sway: stage === 0 ? 0.03 : 0 });
     contactShadow(G, this, 0.9);
   }
 }
+
+Bulb.prototype.dieFx = function (G) {
+  for (let i = 0; i < 5; i++) G.spawnFx('leaf', this.x + (Math.random() - 0.5) * 0.6, this.y + 0.6 + Math.random() * 0.4, this.z + 0.1);
+  G.spawnFx('puff', this.x, this.y + 0.3, this.z);
+};
 
 export class Sentinel extends Creature {
   constructor(def, G) {
@@ -529,6 +558,7 @@ export class Sentinel extends Creature {
       G.shake(0.25);
       G.spawnRing(this.x, this.y, this.z, 2.7, 0.45, this);
       for (let i = 0; i < 3; i++) G.spawnFx('chip', this.x + (Math.random() - 0.5) * 1.2, this.y + 0.2, this.z + 0.4);
+      for (const k of [-1, 1]) G.spawnFx('puff', this.x + k * 0.75, this.y + 0.15, this.z + 0.3);
     } else if (this.state === 'slam' && this.st > 0.9) {
       this.state = 'idle';
       this.st = 0;
@@ -538,7 +568,7 @@ export class Sentinel extends Creature {
   draw(G) {
     const tint = litTint(G, this, [0, 0, 0, 1], 1.0);
     let rect = 'sentinel.idle';
-    if (this.state === 'walk') rect = `sentinel.walk${Math.floor(this.t * 3) % 2}`;
+    if (this.state === 'walk') rect = ['sentinel.walk0', 'sentinel.contact', 'sentinel.walk1', 'sentinel.contact'][Math.floor(this.t * 4.5) % 4];
     if (this.state === 'raise') rect = 'sentinel.raise';
     if (this.state === 'slam') rect = 'sentinel.slam';
     const shake = this.state === 'raise' ? Math.sin(this.st * 60) * 0.03 : 0;
@@ -546,6 +576,11 @@ export class Sentinel extends Creature {
     contactShadow(G, this, 1.7);
   }
 }
+
+Sentinel.prototype.dieFx = function (G) {
+  for (let i = 0; i < 7; i++) G.spawnFx('chip', this.x + (Math.random() - 0.5) * 1.4, this.y + 0.4 + Math.random() * 1.2, this.z + 0.3);
+  for (let i = 0; i < 4; i++) G.spawnFx('puff', this.x + (Math.random() - 0.5) * 1.2, this.y + 0.2 + Math.random() * 0.8, this.z + 0.2);
+};
 
 export class Moth extends Creature {
   constructor(def, G) {
@@ -606,11 +641,19 @@ export class Moth extends Creature {
   }
   draw(G) {
     const tint = litTint(G, this, [0, 0, 0, 1], 0.2);
-    const f = [0, 1, 2, 1][Math.floor(this.t * 14) % 4];
-    G.actors.add({ rect: `moth.${f}`, x: this.x, y: this.y - 0.35, z: this.z, w: 1.2, h: 0.93, tint, cast: true, flash: this.flashT > 0 ? 0.8 : 0 });
+    // one wingbeat over four frames; the body rises on the downstroke. Swoops glide.
+    let f = Math.floor(this.t * 13) % 4;
+    if (this.state === 'swoop' && this.st > 0.12) f = Math.floor(this.st * 6) % 3 === 2 ? 2 : 4;
+    const bob = [-0.05, 0, 0.06, 0.02, 0][f];
+    G.actors.add({ rect: `moth.${f}`, x: this.x, y: this.y - 0.35 + bob, z: this.z, w: 1.2, h: 0.93, flip: this.vx < -0.3, tint, cast: true, flash: this.flashT > 0 ? 0.8 : 0 });
     contactShadow(G, this, 0.7);
   }
 }
+
+Moth.prototype.dieFx = function (G) {
+  for (let i = 0; i < 3; i++) G.spawnFx('puff', this.x + (Math.random() - 0.5) * 0.5, this.y - 0.1, this.z);
+  for (let i = 0; i < 3; i++) G.spawnFx('glint', this.x + (Math.random() - 0.5) * 0.6, this.y - 0.1, this.z);
+};
 
 // ------------------------------------------------------------ the Root Warden
 export class Warden extends Creature {
@@ -785,10 +828,17 @@ export class Warden extends Creature {
     if (this.state === 'charge') rect = 'warden.charge';
     if (this.state === 'stomp') rect = 'warden.stomp';
     if (this.state === 'stunned' || this.state === 'dying' || this.hurtT > 0.12) rect = 'warden.hurt';
+    // phase two wears its damage: lost roof slabs, a cracked mask, a snapped antler
+    if (this.phase === 2) rect += '.b';
+    let sink = 0;
+    if (this.state === 'dying' && this.st > 0.6) {
+      rect = 'warden.down';
+      sink = Math.min(0.25, (this.st - 0.6) * 0.2);
+    }
     const dormantDim = this.state === 'dormant' ? 0.55 : 1;
     const shake = this.state === 'rearCharge' || this.state === 'rearStomp' ? Math.sin(this.st * 70) * 0.04 : 0;
-    const alpha = this.state === 'dying' ? Math.max(0, 1 - Math.max(0, this.st - 1.2)) : 1;
-    G.actors.add({ rect, x: this.x + shake, y: this.y - 0.08, z: this.z, w: 3.87, h: 3.53, flip: this.facing < 0, tint: [tint[0] * dormantDim, tint[1] * dormantDim, tint[2] * dormantDim, alpha], cast: true, flash: this.flashT > 0 ? 0.7 : 0 });
+    const alpha = this.state === 'dying' ? Math.max(0, 1 - Math.max(0, this.st - 1.5) * 1.4) : 1;
+    G.actors.add({ rect, x: this.x + shake, y: this.y - 0.08 - sink, z: this.z, w: 3.87, h: 3.53, flip: this.facing < 0, tint: [tint[0] * dormantDim, tint[1] * dormantDim, tint[2] * dormantDim, alpha], cast: true, flash: this.flashT > 0 ? 0.7 : 0 });
     contactShadow(G, this, 3.0);
   }
 }
@@ -1114,7 +1164,7 @@ export class Fx {
     this.vx = (r() - 0.5) * 2.5;
     this.vz = (r() - 0.5) * 1.2;
     this.vy = kind === 'chip' || kind === 'leaf' ? 3 + r() * 2 : kind === 'glint' ? 0.8 : 0.4;
-    this.life = { puff: 0.45, spark: 0.22, splash: 0.4, ripple: 0.7, chip: 0.8, leaf: 1.0, glint: 0.7 }[kind] ?? 0.5;
+    this.life = { puff: 0.45, spark: 0.22, splash: 0.4, ripple: 0.7, chip: 0.8, leaf: 1.0, glint: 0.7, splat: 1.1 }[kind] ?? 0.5;
     this.variant = Math.floor(r() * 3);
   }
   update(dt) {
@@ -1139,6 +1189,7 @@ export class Fx {
     else if (k === 'ripple') G.fx.add({ rect: 'ring', mode: 1, x: this.x, y: this.y + 0.01, z: this.z, w: 0.4 + this.t * 1.4, h: 0.3 + this.t * 1.0, tint: [0.75, 0.85, 0.9, fade * 0.8] });
     else if (k === 'chip') G.fx.add({ rect: `chip.${this.variant}`, x: this.x, y: this.y, z: this.z, w: 0.3, h: 0.24, tint: [0.9, 0.88, 0.85, 1] });
     else if (k === 'leaf') G.fx.add({ rect: `leaf.${this.variant}`, x: this.x + Math.sin(this.t * 8) * 0.15, y: this.y, z: this.z, w: 0.3, h: 0.24, tint: [0.85, 0.9, 0.8, 1] });
+    else if (k === 'splat') G.fx.add({ rect: `slime.splat.${Math.min(2, Math.floor(this.t * 9))}`, mode: 1, x: this.x, y: this.y, z: this.z, w: 1.0, h: 0.62, tint: [0.9, 0.9, 0.9, Math.min(1, fade * 2.5)] });
     else if (k === 'glint') G.fx.add({ rect: `glint.${f}`, x: this.x, y: this.y, z: this.z + 0.1, w: 0.33, h: 0.33, tint: [1.2, 1.1, 0.85, fade + 0.2] });
   }
 }
