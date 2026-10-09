@@ -178,8 +178,8 @@ export function buildMasonryKit(L, mat, capMat = mat) {
       if (g > 50) continue;
       if (f.kind === 'slabs') {
         // a paving slab cracked and heaved: low, tilted, its edge lifted
-        const w = 0.45 + r() * 0.45, dd = 0.35 + r() * 0.35, th = 0.07 + r() * 0.05;
-        const lift = r() < 0.4 ? 0.06 + r() * 0.06 : 0;
+        const w = 0.45 + r() * 0.45, dd = 0.35 + r() * 0.35, th = 0.09 + r() * 0.05;
+        const lift = r() < 0.65 ? 0.07 + r() * 0.08 : 0.02;
         addBox(caps, x - w / 2, g - 0.04 + lift * 0.5, z - dd / 2, x + w / 2, g + th + lift, z + dd / 2, { chip: 0.05, seed: k + 7, rotY: (r() - 0.5) * 0.5, tilt: lift ? (r() < 0.5 ? 1 : -1) * (0.12 + r() * 0.14) : (r() - 0.5) * 0.05 });
       } else {
         // fallen coping and wall blocks, half sunk where they landed

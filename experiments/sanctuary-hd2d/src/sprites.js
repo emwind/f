@@ -913,11 +913,16 @@ function pot(seed, broken = false) {
       c.bezierCurveTo(14, 46, 6, 42, 4, 30);
       c.bezierCurveTo(2, 18, 13, 14, 14, 8);
       c.closePath();
-    }, R.rust, [1, 3, 4], 3);
-    flat(ctx, rrect(12, 5, 20, 5, 2), R.rust[4]);
-    ctx.fillStyle = rgbStr(R.cream[2]);
+    }, R.rust, [1, 2, 3], 3);
+    flat(ctx, rrect(12, 5, 20, 5, 2), R.rust[3]);
+    ctx.fillStyle = rgbStr(R.cream[1]);
     ctx.fillRect(6, 24, 33, 2);
     for (let x = 8; x < 38; x += 6) ctx.fillRect(x, 27, 2, 3);
+    // aged: soil splashed up the foot, a little moss, a chip in the rim
+    const r = mulberry32(seed + 5);
+    for (let i = 0; i < 10; i++) flat(ctx, ell(8 + r() * 28, 40 + r() * 5, 2 + r() * 2, 1.2), R.dirt[2 + Math.floor(r() * 2)]);
+    for (let i = 0; i < 5; i++) flat(ctx, ell(6 + r() * 10, 36 + r() * 8, 1.6, 1.2), R.moss[3]);
+    flat(ctx, poly([[24, 5], [29, 5], [27, 9]]), R.rust[1]);
   } else {
     const r = mulberry32(seed);
     for (let i = 0; i < 6; i++) {

@@ -984,6 +984,6 @@ function sim(inp = {}, sec = 0.5) {
   const P = G.player;
   return { map: G.L.id, x: +P.x.toFixed(2), y: +P.y.toFixed(2), z: +P.z.toFixed(2), hp: G.state.hp, dead: !!P.dead };
 }
-G.debugApi = { CAM, loadMap, sun, hemi, THEMES, applyLighting, sim };
+G.debugApi = { CAM, loadMap, sun, hemi, THEMES, applyLighting, sim, renderer, camera };
 window.__ready = true;
 requestAnimationFrame(frame);

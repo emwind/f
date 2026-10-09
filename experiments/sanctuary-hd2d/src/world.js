@@ -289,9 +289,12 @@ function groundMaterial(tex) {
         float n1 = texture2D(tNoise, wuv * 1.3).r;
         float n2 = texture2D(tNoise, wuv * 3.1 + vec2(0.31, 0.77)).g;
         float n3 = texture2D(tNoise, wuv * 2.2 + vec2(0.61, 0.13)).b;
+        // a broad, slow noise lets grass and bare earth trade ground in
+        // organic drifts instead of following the tile grid
+        float n0 = texture2D(tNoise, wuv * 0.37 + vec2(0.17, 0.53)).r;
         float w[6];
-        w[0] = vSA.x + (n1 - 0.5) * 0.55 + (n2 - 0.5) * 0.25;
-        w[1] = vSA.y + (n3 - 0.5) * 0.5;
+        w[0] = vSA.x + (n1 - 0.5) * 0.55 + (n2 - 0.5) * 0.25 + (n0 - 0.5) * 0.45;
+        w[1] = vSA.y + (n3 - 0.5) * 0.5 - (n0 - 0.5) * 0.45;
         w[2] = vSA.z + (n2 - 0.5) * 0.3;
         w[3] = vSA.w + (n3 - 0.5) * 0.45 + (n1 - 0.5) * 0.2;
         w[4] = vSB.x + 0.08;
