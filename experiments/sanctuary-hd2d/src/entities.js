@@ -234,7 +234,7 @@ export class Player {
     const fallV = this.vy;
     const landed = verticalStep(G, this, dt);
     // visual only: a short landing crouch after a real fall
-    this.landT = landed && wasAir && fallV < -4 ? 0.11 : Math.max(0, (this.landT ?? 0) - dt);
+    this.landT = landed && wasAir && fallV < -4 ? 0.16 : Math.max(0, (this.landT ?? 0) - dt);
     if (landed) {
       this.airDash = true;
       if (wasAir && fallV < -6) {
@@ -322,7 +322,7 @@ export class Player {
       f = this.vy > 2.5 ? 0 : this.vy > -2.5 ? 1 : 2;
     } else if (this.landT > 0) {
       anim = 'land';
-      f = 0;
+      f = this.landT > 0.07 ? 0 : 1;
     } else if (len2(this.vx, this.vz) > 1) {
       anim = 'walk';
       f = Math.floor(this.anim) % 4;

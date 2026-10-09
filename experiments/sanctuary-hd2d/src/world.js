@@ -2,7 +2,7 @@
 // collision questions the hero and creatures ask. The same data drives both,
 // so every height you see is a height you can stand on.
 import * as THREE from '../vendor/three.module.min.js';
-import { T, WATER_DEPTH, terrainHeight, tileHeight } from './level.js';
+import { T, WATER_DEPTH, terrainHeight, tileHeight, floorField } from './level.js';
 import { fbm2, fbm3, smoothstep, clamp, mulberry32 } from './noise.js';
 import { patchWorldMaterial, worldUniforms } from './shaderPatch.js';
 import { buildMasonryKit } from './masonryKit.js';
@@ -213,7 +213,7 @@ function wallMaterial(tex, L, cliff) {
         // bounce from the lit ground in front: walls facing the camera stay legible in shade
         vec3 nW = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
         float facing = max(0.0, nW.z) * (1.0 - abs(nW.y));
-        totalEmissiveRadiance += diffuseColor.rgb * uBounce * facing * (0.65 + 0.35 * (1.0 - smoothstep(0.0, 2.5, up)));
+        totalEmissiveRadiance += diffuseColor.rgb * (uMoodOn > 0.5 ? moodRow(2.0).rgb : uBounce) * facing * (0.65 + 0.35 * (1.0 - smoothstep(0.0, 2.5, up)));
       `);
   };
   return mat;
@@ -278,12 +278,12 @@ function groundMaterial(tex) {
       tRock: { value: tex.cliff }, tBed: { value: tex.bed }, tRoot: { value: tex.bark }, tNoise: { value: tex.noise },
     });
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 splatA; attribute vec2 splatB; attribute vec2 dampWear; varying vec4 vSA; varying vec2 vSB; varying vec2 vDW;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSA = splatA; vSB = splatB; vDW = dampWear;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 splatA; attribute vec2 splatB; attribute vec2 dampWear; attribute vec3 floorTone; varying vec4 vSA; varying vec2 vSB; varying vec2 vDW; varying vec3 vFT;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSA = splatA; vSB = splatB; vDW = dampWear; vFT = floorTone;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform sampler2D tGrass, tDirt, tFlag, tFlagDamp, tRock, tBed, tRoot, tNoise;
-        varying vec4 vSA; varying vec2 vSB; varying vec2 vDW;`)
+        varying vec4 vSA; varying vec2 vSB; varying vec2 vDW; varying vec3 vFT;`)
       .replace('#include <map_fragment>', `
         vec2 wuv = vWPos.xz * 0.25;
         float n1 = texture2D(tNoise, wuv * 1.3).r;
@@ -305,13 +305,20 @@ function groundMaterial(tex) {
         float damp = clamp(vDW.x + (n2 - 0.5) * 0.35 + (n1 - 0.5) * 0.2, 0.0, 1.0);
         float wear = clamp(vDW.y + (n3 - 0.5) * 0.3, 0.0, 1.0);
         vec4 tc;
+        // forest floor: a second, rotated sampling of the same texture takes
+        // over in broad noise shapes, so its 4-tile repeat never lines up
+        vec2 ruv = mat2(0.8, -0.6, 0.6, 0.8) * wuv * 0.77 + vec2(0.37, 0.11);
+        float alt = vFT.z * step(0.5, n0 + (n2 - 0.5) * 0.25);
         if (best == 0) {
-          tc = texture2D(tGrass, wuv);
+          tc = mix(texture2D(tGrass, wuv), texture2D(tGrass, ruv), alt);
+          // and it is one calmer, cooler green rather than meadow patchwork
+          float gl = dot(tc.rgb, vec3(0.3, 0.59, 0.11));
+          tc.rgb = mix(tc.rgb, gl * vec3(0.84, 1.08, 0.86), vFT.z * 0.5);
           // trampled verge: grass thins toward the bare path
           tc.rgb = mix(tc.rgb, texture2D(tDirt, wuv).rgb * 1.04, smoothstep(0.45, 0.9, wear) * 0.55);
           tc.rgb *= mix(1.0, 0.88, damp);
         }
-        else if (best == 1) tc = texture2D(tDirt, wuv);
+        else if (best == 1) tc = mix(texture2D(tDirt, wuv), texture2D(tDirt, ruv), alt);
         else if (best == 2) {
           tc = mix(texture2D(tFlag, wuv), texture2D(tFlagDamp, wuv), smoothstep(0.38, 0.62, damp));
           // walked paving is worn smooth and a touch paler
@@ -320,6 +327,17 @@ function groundMaterial(tex) {
         else if (best == 3) tc = texture2D(tRock, wuv * vec2(1.0, 1.0) + vec2(0.13, 0.4));
         else if (best == 4) tc = texture2D(tBed, wuv);
         else tc = texture2D(tRoot, wuv);
+        // authored forest tones: moss beds deepen and smooth the grass, leaf
+        // litter drifts over grass and path alike with a broken, leafy rim
+        if (best <= 1) {
+          float moss = smoothstep(0.25, 0.6, vFT.x + (n2 - 0.5) * 0.35);
+          vec3 mossC = texture2D(tGrass, ruv * 1.4).rgb * vec3(0.7, 1.02, 0.62) * (0.9 + 0.25 * n3);
+          tc.rgb = mix(tc.rgb, mossC, moss * 0.85);
+          float lit = smoothstep(0.3, 0.62, vFT.y + (n2 - 0.5) * 0.55 + (n1 - 0.5) * 0.3);
+          vec3 leafC = texture2D(tDirt, wuv * 1.9 + vec2(0.4, 0.1)).rgb * vec3(1.22, 0.94, 0.64);
+          leafC *= 0.82 + 0.4 * step(0.62, texture2D(tNoise, wuv * 7.0).g);
+          tc.rgb = mix(tc.rgb, leafC, lit * 0.8);
+        }
         // a thin shadowed seam where one ground type laps over another
         if (bw - sw < 0.07) tc.rgb *= (best == 0 ? mix(0.86, 0.7, damp) : 0.86);
         diffuseColor *= tc;
@@ -386,7 +404,10 @@ export function buildWorld(L, tex) {
   // per pixel with a noisy argmax, so transitions are crisp but hand-shaped.
   const N = SUB;
   const ground = new Geo();
-  const splatA = [], splatB = [], dw = [];
+  const splatA = [], splatB = [], dw = [], ft = [];
+  // authored floor (forest): grass and walked earth follow its paths as
+  // continuous shapes, and it adds moss, litter and damp as large tones
+  const floorAt = floorField(L);
   const typeW = (x, z, hv) => {
     const w = [0, 0, 0, 0, 0, 0];
     for (let a = -1; a <= 1; a++)
@@ -414,9 +435,24 @@ export function buildWorld(L, tex) {
           const [dx, dz] = disp(x, y, z);
           ids.push(ground.v(x + dx, y, z + dz, x * TEX_SCALE, z * TEX_SCALE, topShade(x, z, y)));
           const w = st ? [0, 0, 0, 0, 0, 0].map((_, q) => (q === L.TY[i] ? 1 : 0)) : typeW(x, z, y);
+          let damp = field.at(field.damp, x, z), wear = field.at(field.wear, x, z), moss = 0, litter = 0;
+          const f = floorAt && z >= L.floor.z0 ? floorAt(x, z) : null;
+          if (f) {
+            const soft = w[T.GRASS] + w[T.DIRT];
+            if (soft > 0.01) {
+              const dirt = f.path * (1 - f.moss * 0.5);
+              w[T.GRASS] = soft * (1 - dirt) + 0.12 * soft * (1 - f.path);
+              w[T.DIRT] = soft * dirt;
+            }
+            wear = Math.max(f.path * 0.9, wear * 0.3);
+            damp = Math.max(damp * 0.75, f.damp * 0.85, f.moss * 0.45);
+            moss = f.moss * (1 - f.path * 0.8);
+            litter = f.litter;
+          }
           splatA.push(w[T.GRASS], w[T.DIRT], w[T.FLAG], w[T.ROCK]);
           splatB.push(w[T.WATER], w[T.ROOT]);
-          dw.push(field.at(field.damp, x, z), field.at(field.wear, x, z));
+          dw.push(damp, wear);
+          ft.push(moss, litter, f ? 1 : 0);
         }
       }
       for (let j = 0; j < N; j++)
@@ -431,6 +467,7 @@ export function buildWorld(L, tex) {
     g.setAttribute('splatA', new THREE.Float32BufferAttribute(splatA, 4));
     g.setAttribute('splatB', new THREE.Float32BufferAttribute(splatB, 2));
     g.setAttribute('dampWear', new THREE.Float32BufferAttribute(dw, 2));
+    g.setAttribute('floorTone', new THREE.Float32BufferAttribute(ft, 3));
     const mesh = new THREE.Mesh(g, groundMaterial(tex));
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
@@ -843,8 +880,9 @@ export function makeCollider(L, solids) {
   }
 
   // sun occlusion test for sprites: march towards the sun through terrain and solids
-  function sunlit(x, y, z, sun, canopies = []) {
+  function sunlit(x, y, z, sun, canopies = [], noDapple = false) {
     let lit = 1;
+    if (api.dapple && !noDapple) lit = api.dapple(x, y, z);
     for (let t = 0.4; t < 16; t += 0.35) {
       const px = x + sun.x * t, py = y + sun.y * t, pz = z + sun.z * t;
       if (terrain(px, pz) > py) return 0;
@@ -862,7 +900,8 @@ export function makeCollider(L, solids) {
     return lit;
   }
 
-  return { terrain, ground, blocked, isWater, sunlit, solids };
+  const api = { terrain, ground, blocked, isWater, sunlit, solids, dapple: null };
+  return api;
 }
 
 export { tileHeight };

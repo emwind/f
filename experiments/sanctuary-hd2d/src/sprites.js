@@ -144,7 +144,12 @@ function heroFrame(dir, pose) {
   const sway = pose.sway || 0; // hair tail / scarf secondary motion
   const wind = pose.wind || 0; // how far the scarf tail streams
   const sword = pose.sword; // null | {ang, len, behind}
-  const ux = side ? lean : 0; // upper-body x offset
+  // front/back walk: the hips carry the weight over the planted foot, the
+  // shoulders counter-tilt, and the feet separate towards/away from us
+  const hip = side ? 0 : pose.hip || 0;
+  const tilt = side ? 0 : pose.tilt || 0;
+  const step = side ? [0, 0] : pose.step || [0, 0];
+  const ux = side ? lean : hip * 0.6; // upper-body x offset
   const uy = b + (side ? Math.abs(lean) * 0.3 : 0);
 
   const drawSword = () => {
@@ -174,9 +179,9 @@ function heroFrame(dir, pose) {
   // legs: undyed trousers into worn boots
   const legs = side
     ? [[cx - 4 + stride, lift[0]], [cx - 1 - stride, lift[1]]]
-    : [[cx - 7.5, lift[0]], [cx + 0.5, lift[1]]];
+    : [[cx - 7.5 + hip - Math.abs(step[0]) * 0.3, lift[0]], [cx + 0.5 + hip + Math.abs(step[1]) * 0.3, lift[1]]];
   legs.forEach(([lx, ly], k) => {
-    const top = 72 + b, bot = gy - 11 - ly;
+    const top = 72 + b + (k ? -tilt : tilt) * 0.7, bot = gy - 11 - ly + step[k];
     const tones = k ? [0, 1, 2] : [1, 2, 3];
     if (side && ly > 1.5) {
       // a lifted leg bends: knee forward, foot tucked back under
@@ -206,27 +211,37 @@ function heroFrame(dir, pose) {
   const hemBack = side ? -3 : 0;
   shade(
     ctx,
-    poly([[cx - tw + ux, 41 + uy], [cx + tw + ux, 41 + uy], [cx + tw + 3 + ux * 0.5, 76 + b], [cx + 4, 79 + b], [cx - 2, 76.5 + b], [cx - tw - 3 + hemBack + ux * 0.5, 77 + b]]),
+    poly([[cx - tw + ux, 41 + uy - tilt], [cx + tw + ux, 41 + uy + tilt], [cx + tw + 3 + ux * 0.5, 76 + b - tilt * 0.7], [cx + 4 + hip * 0.4, 79 + b], [cx - 2 + hip * 0.4, 76.5 + b], [cx - tw - 3 + hemBack + ux * 0.5, 77 + b + tilt * 0.7]]),
     R.cloth,
     back ? [1, 2, 3] : [1, 3, 4],
     2.4
   );
   // hem trim and the slit
   ctx.fillStyle = rgbStr(R.cloth[0]);
-  if (!side) ctx.fillRect(cx - 1, 66 + b, 1.5, 11);
+  if (!side) ctx.fillRect(cx - 1 + hip * 0.4, 66 + b, 1.5, 11);
   // belt with a pouch on the hip
   shade(ctx, rrect(cx - tw - 1 + ux, 59 + uy, tw * 2 + 2, 4.5, 1), R.leather, [1, 2, 4], 1);
   if (!back) flat(ctx, rrect(cx - 1.5 + (side ? 5 : 0) + ux, 59.5 + uy, 3.5, 3.5, 1), R.gold[3]);
   shade(ctx, rrect(side ? cx - 9 + ux : cx + tw - 4, 61 + uy, 6, 7, 2), R.leather, [0, 2, 3], 1);
+  // seen from behind, the scarf's tail hangs down the back and swings
+  // a beat behind the body
+  if (back) {
+    const sx = cx + 3 + ux, sw = sway * 1.6 - hip * 0.8;
+    shade(ctx, poly([[sx - 3, 40 + uy], [sx + 3, 40 + uy], [sx + 4 + sw * 0.6, 50 + uy], [sx + 3.5 + sw, 58 + uy + wind * 0.5], [sx - 1 + sw, 59 + uy], [sx - 2 + sw * 0.5, 50 + uy]]), R.rust, [1, 2, 3], 1.2);
+    flat(ctx, poly([[sx - 1 + sw, 57 + uy], [sx + 3.5 + sw, 56 + uy], [sx + 3 + sw, 59 + uy], [sx + sw, 59.5 + uy]]), R.rust[0]);
+  }
 
   // arms: indigo upper arm, undyed rolled sleeve, hand
   if (!side) {
     for (const k of [-1, 1]) {
-      const ax = cx + k * (tw + 1.5) - 3.2;
-      const sy = k * swing;
-      shade(ctx, rrect(ax, 42 + b + Math.min(0, sy) * 0.5, 6.5, 13, 3), R.cloth, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.3);
-      shade(ctx, rrect(ax + k * 0.5, 53 + b + sy * 0.4, 6, 10, 3), R.cream, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.3);
-      flat(ctx, ell(ax + 3.2 + k * 0.5, 64.5 + b + sy * 0.6, 3.3, 3.3), R.skin[k < 0 ? 3 : 2]);
+      const ax = cx + k * (tw + 1.5) - 3.2 + ux;
+      const sy = k * swing, ty = k * tilt;
+      // an arm swinging towards us comes down and out a little, one swinging
+      // away tucks in behind the body line
+      const out = Math.max(0, back ? -sy : sy) * 0.18 * k;
+      shade(ctx, rrect(ax, 42 + b + ty + Math.min(0, sy) * 0.5, 6.5, 13, 3), R.cloth, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.3);
+      shade(ctx, rrect(ax + k * 0.5 + out, 53 + b + ty + sy * 0.4, 6, 10, 3), R.cream, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.3);
+      flat(ctx, ell(ax + 3.2 + k * 0.5 + out * 1.4, 64.5 + b + ty + sy * 0.6, 3.3, 3.3), R.skin[k < 0 ? 3 : 2]);
     }
   } else {
     shade(ctx, rrect(cx - 3 + swing + ux, 43 + uy, 6.5, 12, 3), R.cloth, [1, 3, 4], 1.3);
@@ -337,14 +352,31 @@ function heroFrames() {
     const side = dir === 'side';
     const walk = [0, 1, 2, 3].map((f) => {
       const s = [1, 0, -1, 0][f];
+      if (side)
+        return heroFrame(dir, {
+          bob: f % 2 ? -1.5 : 0.5,
+          lift: [Math.max(0, s) * 3, Math.max(0, -s) * 3],
+          swing: s * 5,
+          stride: s * 5,
+          lean: 1,
+          sway: [1, 0, -1, 0][(f + 1) % 4] * 1.4,
+          wind: 0.5,
+        });
+      // front/back: contact (feet split, one towards us), passing (weight
+      // over the planted leg, the other knee up), mirrored. The hips shift
+      // over the planted foot, the shoulders tilt against them, and the
+      // scarf and hair arrive a beat late.
+      const fwd = dir === 'up' ? -1 : 1;
+      const p = [0, -1, 0, 1][f]; // which side carries the weight on passing frames
       return heroFrame(dir, {
-        bob: f % 2 ? -1.5 : 0.5,
-        lift: side ? [Math.max(0, s) * 3, Math.max(0, -s) * 3] : [s > 0 ? 4 : 0, s < 0 ? 4 : 0],
+        bob: f % 2 ? -1.5 : 0.8,
+        step: s ? [s * 2.6 * fwd, -s * 2 * fwd] : [0, 0],
+        lift: s ? [s < 0 ? 1.5 : 0, s > 0 ? 1.5 : 0] : [p > 0 ? 4.5 : 0, p < 0 ? 4.5 : 0],
+        hip: p * 1.6,
+        tilt: s * 1.1 + p * -0.6,
         swing: s * 5,
-        stride: s * 5,
-        lean: side ? 1 : 0,
-        sway: [1, 0, -1, 0][(f + 1) % 4] * 1.4,
-        wind: 0.5,
+        sway: [0, -1, 0, 1][(f + 3) % 4] * 2.2,
+        wind: dir === 'up' ? 0.6 : 0.5,
       });
     });
     const idle = [0, 1].map((f) => heroFrame(dir, { bob: f ? -1 : 0, sway: f ? 0.6 : -0.4 }));
@@ -357,7 +389,11 @@ function heroFrames() {
       heroFrame(dir, { bob: -0.5, lift: [1, 4], swing: 6, stride: -3, lean: side ? -1 : 0, sway: -3, wind: 1.3 }),
     ];
     // landing: knees give, arms out for balance, hair still falling
-    const land = [heroFrame(dir, { bob: 4, lift: [0, 0], swing: 4, stride: side ? 3 : 0, lean: side ? 2 : 0, sway: 2.5, wind: 0.2 })];
+    // and a recovery beat: rising out of the crouch, hair settling
+    const land = [
+      heroFrame(dir, { bob: 4, lift: [0, 0], swing: 4, stride: side ? 3 : 0, lean: side ? 2 : 0, sway: 2.5, wind: 0.2, step: [1, -1] }),
+      heroFrame(dir, { bob: 1.5, lift: [0, 0], swing: 1.5, stride: side ? 1 : 0, lean: side ? 1 : 0, sway: -1, wind: 0.3 }),
+    ];
     // dash: low and leaning hard, scarf and hair stream flat behind
     const dash = [heroFrame(dir, { bob: 3, lift: [5, 0], swing: -7, stride: 7, lean: side ? 5 : 0, sway: side ? -1.5 : 1.5, wind: 2.8 })];
     // hurt: thrown back, one arm up, eyes shut
@@ -565,6 +601,217 @@ function canopy(seed, w = 190, h = 150, opts) {
   }
   ctx.restore();
   return finish(ctx, { outline: [10, 16, 13] });
+}
+
+// ------------------------------------------------------------ tree species
+// Three canopy families for the forest. Each is painted as a whole piece
+// with its own silhouette, limb structure and underside, so a crown reads
+// as a kind of tree rather than as a pile of interchangeable leaf balls.
+const rampPick = (ramp) => (v) => ramp[Math.max(0, Math.min(ramp.length - 1, Math.round(v * (ramp.length - 1))))];
+
+// one leaf cluster: scalloped silhouette in its shadow tone, then dabs lit
+// by the cluster's own pseudo-normal (the same recipe as leafMass)
+function leafCluster(ctx, r, lx, ly, rad, pick, base, { density = 1, dab = 1, squash = 0.86 } = {}) {
+  flat(ctx, ell(lx, ly, rad, rad * squash), pick(base));
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + r() * 0.5;
+    flat(ctx, ell(lx + Math.cos(a) * rad * 0.92, ly + Math.sin(a) * rad * 0.8 * squash / 0.86, rad * 0.26, rad * 0.22, a), pick(base + (Math.sin(a) < 0 ? 0.05 : -0.05)));
+  }
+  const n = Math.floor(rad * rad * 0.55 * density);
+  for (let i = 0; i < n; i++) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * rad;
+    const x = lx + Math.cos(a) * d, y = ly + Math.sin(a) * d * squash;
+    const nx = (x - lx) / rad, ny = (y - ly) / rad;
+    const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+    const lit = -nx * 0.5 - ny * 0.75 + nz * 0.35;
+    flat(ctx, ell(x, y, (1.6 + r() * 2.4) * dab, (1.2 + r() * 1.4) * dab, r() * Math.PI), pick(base + 0.14 + lit * 0.42 + (r() - 0.5) * 0.14));
+  }
+}
+
+// a tapering limb along a quadratic curve, dark body with a lit upper edge
+function paintLimb(ctx, x0, y0, cx, cy, x1, y1, w0, w1, ramp = R.bark, tones = [1, 3]) {
+  const steps = 14;
+  for (const pass of [0, 1]) {
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps, t1 = (i + 1) / steps;
+      const q = (t, a, b, c) => (1 - t) * (1 - t) * a + 2 * (1 - t) * t * b + t * t * c;
+      const wd = w0 + (w1 - w0) * t0;
+      ctx.strokeStyle = rgbStr(ramp[tones[pass]]);
+      ctx.lineWidth = pass ? Math.max(1, wd * 0.35) : wd;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      const o = pass ? -wd * 0.28 : 0;
+      ctx.moveTo(q(t0, x0, cx, x1) + o, q(t0, y0, cy, y1) + o);
+      ctx.lineTo(q(t1, x0, cx, x1) + o, q(t1, y0, cy, y1) + o);
+      ctx.stroke();
+    }
+  }
+}
+
+// MATURE BROADLEAF: a wide crown of heavy, flat-bottomed tiers carried on
+// near-horizontal limbs, weighted to one side. The tiers stand apart so sky
+// shows between them; the underside is a dark shelf the limbs disappear into.
+function broadleaf(seed, w = 240, h = 176) {
+  const ctx = frame(w, h);
+  const r = mulberry32(seed);
+  const pick = rampPick(R.leaf);
+  const heavy = r() < 0.5 ? -1 : 1;
+  const masses = [];
+  // a lower row of wide tiers, then a smaller upper row stepped back over them
+  for (const [row, n, y0, sc] of [[0, 3, 0.56, 1], [1, 2 + (r() < 0.5 ? 1 : 0), 0.34, 0.8]]) {
+    for (let k = 0; k < n; k++) {
+      const t = n === 1 ? 0.5 : k / (n - 1);
+      const big = (1 + heavy * (t - 0.5) * 0.5) * sc;
+      const rx = w * (0.17 + r() * 0.04) * big;
+      const spread = row ? 0.5 : 0.7;
+      const x = Math.max(rx + 4, Math.min(w - rx - 4, w * (0.5 - spread / 2 + t * spread) + heavy * w * 0.04 + (r() - 0.5) * 10));
+      const y = h * (y0 + Math.abs(t - 0.5) * (row ? 0.08 : 0.14) + (r() - 0.5) * 0.06);
+      masses.push({ x, y, rx, ry: rx * 0.6 });
+    }
+  }
+  // a crown tier riding above the middle, set to the heavy side
+  masses.push({ x: w * (0.5 + heavy * 0.1), y: h * 0.17, rx: w * 0.12, ry: w * 0.075 });
+  // limbs fan out from a short bole at the bottom
+  const bx = w / 2 + heavy * 3, by = h + 2;
+  for (const m of masses) paintLimb(ctx, bx, by, (bx + m.x) / 2, by - (by - m.y) * 0.35, m.x, m.y + m.ry * 0.45, 10, 3);
+  masses.sort((a, b) => a.y - b.y);
+  for (const m of masses) {
+    const floor = m.y + m.ry * 0.5; // flat lower edge
+    const lobes = [];
+    const cnt = Math.round(9 + m.rx * 0.12);
+    for (let i = 0; i < cnt; i++) {
+      const a = r() * Math.PI * 2, d = Math.pow(r(), 0.7);
+      const rad = m.rx * (0.24 + r() * 0.12) * (1.1 - d * 0.3);
+      const lx = m.x + Math.cos(a) * d * (m.rx - rad * 0.9);
+      const ly = Math.min(floor - rad * 0.55, m.y + Math.sin(a) * d * (m.ry - rad * 0.6));
+      lobes.push([lx, ly, rad]);
+    }
+    lobes.sort((p, q) => p[1] - q[1]);
+    // the shelf: a dark band under the tier that the lobes sit on
+    flat(ctx, ell(m.x, floor - 3, m.rx * 0.7, m.ry * 0.26), R.leaf[0]);
+    for (const [lx, ly, rad] of lobes) {
+      const g = -((ly - m.y) / m.ry) * 0.42 - ((lx - w / 2) / w) * 0.4 - (m.y / h - 0.35) * 0.35;
+      leafCluster(ctx, r, lx, ly, rad, pick, 0.26 + g * 0.3, { density: 1.05 });
+    }
+    // underside: the lower third falls into cool shadow, with leaf tips hanging
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, floor - m.ry * 0.38, w, m.ry);
+    ctx.clip();
+    ctx.globalAlpha = 0.55;
+    flat(ctx, ell(m.x, floor - m.ry * 0.18, m.rx * 0.8, m.ry * 0.36), R.leafCool[1]);
+    ctx.restore();
+    for (let i = 0; i < 10; i++) {
+      const x = m.x + (r() - 0.5) * m.rx * 1.5;
+      flat(ctx, ell(x, floor + r() * 3, 1.6 + r() * 1.6, 2 + r() * 2, 0), pick(0.08 + r() * 0.12));
+    }
+  }
+  // sky holes through the thin middles of the tiers
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  for (const m of masses) if (r() < 0.7) flat(ctx, ell(m.x + (r() - 0.5) * m.rx * 1.2, m.y + (r() - 0.5) * m.ry * 0.5, 1.5 + r() * 3, 1 + r() * 1.6, r() * 3), [0, 0, 0]);
+  ctx.restore();
+  // limb ends that show again below the shelves, in front of the gaps
+  for (const m of masses.slice(-2)) paintLimb(ctx, m.x + (bx - m.x) * 0.35, m.y + m.ry * 0.5 + (by - m.y) * 0.3, m.x + (bx - m.x) * 0.15, m.y + m.ry * 0.6, m.x, m.y + m.ry * 0.5, 4, 2.5);
+  return finish(ctx, { outline: [10, 16, 13] });
+}
+
+// RAVINE TREE: a tall, leaning moisture-lover (alder/willow kind). Small
+// drooping caps along the stem, each trailing a curtain of hanging leaf
+// strands you can see through; cool blue-green, catching light only on top.
+function ravineTree(seed, w = 150, h = 214) {
+  const ctx = frame(w, h);
+  const r = mulberry32(seed);
+  const ramp = [...R.leafCool, R.leaf[5], R.leaf[6]];
+  const pick = rampPick(ramp);
+  const lean = (r() < 0.5 ? -1 : 1) * (10 + r() * 8);
+  const sx = w / 2 - lean * 0.6, sy = h + 2, tx = w / 2 + lean * 0.5, ty = 14;
+  paintLimb(ctx, sx, sy, w / 2 + lean * 0.4, h * 0.55, tx, ty, 6, 2);
+  const tiers = [];
+  const nT = 4;
+  for (let k = 0; k < nT; k++) {
+    const t = 0.1 + (k / (nT - 1)) * 0.62;
+    const px = sx + (tx - sx) * (1 - t) + Math.sin(t * 3) * 3;
+    const py = sy + (ty - sy) * (1 - t);
+    const side = k % 2 ? 1 : -1;
+    const cx = px + side * w * (0.1 + r() * 0.08), cy = h - py < 0 ? py : py;
+    tiers.push({ x: Math.max(30, Math.min(w - 30, cx)), y: h - (h - cy), rx: w * (0.2 + (1 - k / nT) * 0.06 + r() * 0.04), side, px, py });
+  }
+  tiers.sort((a, b) => a.y - b.y);
+  for (const T of tiers) paintLimb(ctx, T.px, T.py, (T.px + T.x) / 2, T.py - 6, T.x, T.y, 3, 1.5);
+  for (const T of tiers) {
+    // curtain of hanging strands first (behind the cap's lit top): chains of
+    // small leaflets, irregular in length and spacing, sky between them
+    const nStr = Math.round(T.rx / 5.5);
+    for (let s = 0; s < nStr; s++) {
+      const u = (s + 0.3 + r() * 0.4) / nStr - 0.5;
+      const x0 = T.x + u * T.rx * 1.75;
+      const len = (0.08 + r() * 0.2) * h * (1 - Math.abs(u) * 0.6);
+      const drift = (r() - 0.5) * 5 + T.side * 2.5;
+      ctx.strokeStyle = rgbStr(ramp[1]);
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(x0, T.y + 2);
+      ctx.quadraticCurveTo(x0 + drift * 0.2, T.y + 3 + len * 0.5, x0 + drift, T.y + 3 + len);
+      ctx.stroke();
+      let k = 0;
+      for (let d = 0; d < len; d += 1.7 + r() * 1.1, k++) {
+        const f = d / len;
+        const x = x0 + drift * f * f + (k % 2 ? 1.3 : -1.3), y = T.y + 3 + d;
+        flat(ctx, ell(x, y, 2.1 - f * 0.8, 1.3, (k % 2 ? 0.7 : -0.7)), pick(0.5 - f * 0.34 + (r() - 0.5) * 0.14 - (x - w / 2) / w * 0.2));
+      }
+    }
+    // the cap: a low, drooping umbrella of small clusters
+    for (let i = 0; i < 7; i++) {
+      const u = (i / 6 - 0.5) * 1.7;
+      const rad = T.rx * (0.24 + r() * 0.08) * (1 - Math.abs(u) * 0.25);
+      const lx = T.x + u * T.rx * 0.62, ly = T.y + Math.abs(u) * T.rx * 0.28 - 2;
+      leafCluster(ctx, r, lx, ly, rad, pick, 0.42 - Math.abs(u) * 0.12 - (lx - w / 2) / w * 0.3, { density: 1.1, dab: 0.8, squash: 0.62 });
+    }
+  }
+  // see-through: gaps between the strands are left open; a few more holes
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 6; i++) flat(ctx, ell(w * (0.2 + r() * 0.6), h * (0.2 + r() * 0.6), 1.5 + r() * 2, 4 + r() * 5), [0, 0, 0]);
+  ctx.restore();
+  return finish(ctx, { outline: [14, 22, 24] });
+}
+
+// YOUNG GROWTH: a sapling's open crown. The twig skeleton is the drawing;
+// small bright leaf sprays sit at its tips with sky everywhere between them.
+function youngTree(seed, w = 128, h = 136) {
+  const ctx = frame(w, h);
+  const r = mulberry32(seed);
+  const pick = rampPick(R.leaf.slice(3));
+  const tips = [];
+  const grow = (x, y, a, len, wd, depth) => {
+    const ex = x + Math.cos(a) * len, ey = y + Math.sin(a) * len;
+    paintLimb(ctx, x, y, (x + ex) / 2 + (r() - 0.5) * len * 0.2, (y + ey) / 2, ex, ey, wd, wd * 0.7, R.lime, [2, 5]);
+    if (depth === 0) {
+      tips.push([ex, ey]);
+      return;
+    }
+    const n = depth > 2 ? 2 : 2 + (r() < 0.4 ? 1 : 0);
+    for (let k = 0; k < n; k++) {
+      // branches turn back towards vertical, so the crown is a loose ovoid
+      const na = a + (k - (n - 1) / 2) * (0.42 + r() * 0.3) + (r() - 0.5) * 0.25;
+      grow(ex, ey, na + (-Math.PI / 2 - na) * 0.25, len * (0.7 + r() * 0.14), wd * 0.7, depth - 1);
+    }
+  };
+  grow(w / 2 + (r() - 0.5) * 6, h + 2, -Math.PI / 2 + (r() - 0.5) * 0.2, h * 0.26, 4.2, 4);
+  // a second, thinner stem from the same root
+  grow(w / 2 + 4, h + 2, -Math.PI / 2 + 0.35 + r() * 0.15, h * 0.2, 2.6, 3);
+  // leaf sprays at the tips: loose, small, bright, lit from the upper left
+  for (const [x, y] of tips) {
+    const n = 9 + Math.floor(r() * 8);
+    for (let i = 0; i < n; i++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 11;
+      const lx = x + Math.cos(a) * d, ly = y + Math.sin(a) * d * 0.8 + 2;
+      const lit = -Math.cos(a) * 0.3 - Math.sin(a) * 0.4 - (lx - w / 2) / w * 0.4 - (ly / h - 0.4) * 0.5;
+      flat(ctx, ell(lx, ly, 2 + r() * 1.6, 1.3 + r(), r() * Math.PI), pick(0.45 + lit * 0.5 + (r() - 0.5) * 0.2));
+    }
+  }
+  return finish(ctx, { outline: [12, 18, 13] });
 }
 
 function fern(seed, w = 104, h = 70) {
@@ -1669,6 +1916,9 @@ export function buildAtlas() {
   for (const anim in slime) slime[anim].forEach((c, i) => add(`slime.${anim}.${i}`, c));
   for (let i = 0; i < 6; i++) add(`canopy.${i}`, canopy(100 + i, 170 + (i % 3) * 20, 136 + (i % 2) * 16));
   for (let i = 0; i < 2; i++) add(`canopyCool.${i}`, canopy(140 + i, 200, 150, { ramp: R.leafCool }));
+  for (let i = 0; i < 4; i++) add(`oak.${i}`, broadleaf(1500 + i, 232 + (i % 2) * 20, 168 + (i % 3) * 8));
+  for (let i = 0; i < 3; i++) add(`alder.${i}`, ravineTree(1600 + i, 140 + i * 8, 204 + (i % 2) * 14));
+  for (let i = 0; i < 3; i++) add(`young.${i}`, youngTree(1700 + i, 120 + i * 8, 130 + (i % 2) * 10));
   for (let i = 0; i < 5; i++) add(`bush.${i}`, bush(200 + i, 96 + (i % 3) * 16, 74 + (i % 2) * 12));
   for (let i = 0; i < 2; i++) add(`bushDry.${i}`, bush(230 + i, 90, 66, { ramp: R.grassDry }));
   for (let i = 0; i < 4; i++) add(`fern.${i}`, fern(300 + i));

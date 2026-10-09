@@ -19,6 +19,12 @@ export const worldUniforms = {
   uDeepTop: { value: 2.0 },
   // light bounced off sunlit ground into the wall faces that face the camera
   uBounce: { value: new THREE.Color(0.18, 0.16, 0.13) },
+  // spatial light: per-area grading looked up by world z, so every region
+  // keeps its own light when it is seen from another one (see buildMoodLut
+  // in main.js). Rows: sun grade, sky grade (both /4), bounce, deep (a = amount).
+  uMoodTex: { value: null },
+  uMoodLen: { value: 1 },
+  uMoodOn: { value: 0 },
 };
 
 export const GLSL_COMMON = /* glsl */ `
@@ -34,7 +40,13 @@ uniform float uHighY;
 uniform vec3 uHaze;
 uniform float uHazeAmt;
 uniform float uDeepTop;
+uniform sampler2D uMoodTex;
+uniform float uMoodLen;
+uniform float uMoodOn;
 varying vec3 vWPos;
+vec4 moodRow(float row) {
+  return texture2D(uMoodTex, vec2(clamp(vWPos.z / uMoodLen, 0.0, 1.0), (row + 0.5) / 4.0));
+}
 varying float vViewZ;
 float bayer4(vec2 p) {
   ivec2 q = ivec2(mod(p, 4.0));
@@ -53,9 +65,11 @@ void revealDiscard() {
   }
 }
 vec3 depthTint(vec3 c) {
-  float k = smoothstep(uDeepTop, -0.6, vWPos.y) * uDeepAmount;
-  c = mix(c, c * uDeep * 3.2, k * 0.55);
-  c = mix(c, uDeep, k * 0.35);
+  vec3 deep = uDeep; float amt = uDeepAmount;
+  if (uMoodOn > 0.5) { vec4 dp = moodRow(3.0); deep = dp.rgb; amt = dp.a; }
+  float k = smoothstep(uDeepTop, -0.6, vWPos.y) * amt;
+  c = mix(c, c * deep * 3.2, k * 0.55);
+  c = mix(c, deep, k * 0.35);
   // the forest rim and highest ground fade slightly into cool haze
   float hk = smoothstep(uHighY - 0.5, uHighY + 2.0, vWPos.y) * uHazeAmt;
   c = mix(c, uHaze, hk);
@@ -82,6 +96,14 @@ export function patchWorldMaterial(mat, { instanced = false } = {}) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + GLSL_COMMON)
       .replace('void main() {', 'void main() {\n revealDiscard();')
+      .replace(
+        '#include <lights_fragment_end>',
+        `#include <lights_fragment_end>
+        if (uMoodOn > 0.5) {
+          reflectedLight.directDiffuse *= moodRow(0.0).rgb * 4.0;
+          reflectedLight.indirectDiffuse *= moodRow(1.0).rgb * 4.0;
+        }`
+      )
       .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n gl_FragColor.rgb = depthTint(gl_FragColor.rgb);');
   };
   return mat;
