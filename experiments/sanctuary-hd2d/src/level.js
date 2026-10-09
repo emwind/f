@@ -657,7 +657,7 @@ export function buildShrine() {
   // main hall (0)
   fill(3, 18, 26, 33, 0, T.FLAG, 1);
   for (let z = 18; z <= 33; z++)
-    for (let x = 3; x <= 26; x++) if (fbm2(x * 0.3, z * 0.3, 3, 71) > 0.62) TY[idx(x, z)] = T.DIRT;
+    for (let x = 3; x <= 26; x++) if (fbm2(x * 0.3, z * 0.3, 3, 71) > 0.7) TY[idx(x, z)] = T.DIRT;
   // side galleries (2) with their stairs
   fill(1, 19, 4, 33, 2, T.FLAG, 1);
   fill(25, 19, 28, 33, 2, T.FLAG, 1);
@@ -671,8 +671,12 @@ export function buildShrine() {
   // boss door wall, then the Warden's chamber (0)
   fill(13, 16, 16, 17, 0, T.FLAG, 1);
   fill(7, 2, 23, 15, 0, T.FLAG, 1);
-  for (let z = 2; z <= 15; z++)
-    for (let x = 7; x <= 23; x++) if (fbm2(x * 0.35, z * 0.35, 3, 83) > 0.6) TY[idx(x, z)] = T.DIRT;
+  // the arena floor stays whole except where the Warden's roots broke up
+  // through it, behind where it sleeps
+  typeAt(10, 4, 11, 5, T.DIRT);
+  typeAt(12, 4, 12, 4, T.DIRT);
+  typeAt(18, 4, 20, 4, T.DIRT);
+  typeAt(19, 5, 19, 5, T.DIRT);
   // raised ledges around the arena
   fill(7, 2, 8, 15, 1, T.FLAG, 1);
   fill(22, 2, 23, 15, 1, T.FLAG, 1);

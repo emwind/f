@@ -367,41 +367,97 @@ function heroFrames() {
   return out;
 }
 
-// ------------------------------------------------------------ moss slime
-function slimeFrame(w, h, opts = {}) {
-  const ctx = frame(64, 56);
-  const cx = 32, gy = 52;
-  const top = gy - h;
-  shade(ctx, (c, nb) => {
+// ------------------------------------------------------------ bog slime
+// A lump of pond mud and water: lopsided, with a moss cap slipping off one
+// side, a pebble stuck in its flank and a root sprig on top. The core is a
+// little lighter so it reads as murky water rather than solid jelly.
+function slimeBody(w, h, lean, foot) {
+  const cx = 32, gy = 52, top = gy - h;
+  return (c, nb) => {
     if (!nb) c.beginPath();
-    c.moveTo(cx - w / 2, gy);
-    c.bezierCurveTo(cx - w / 2 - 2, top + h * 0.35, cx - w * 0.3, top, cx, top);
-    c.bezierCurveTo(cx + w * 0.3, top, cx + w / 2 + 2, top + h * 0.35, cx + w / 2, gy);
+    c.moveTo(cx - w / 2 - foot, gy);
+    c.bezierCurveTo(cx - w / 2 - 3, top + h * 0.42, cx - w * 0.3 + lean, top, cx + lean, top);
+    c.bezierCurveTo(cx + w * 0.38 + lean, top + 1, cx + w / 2 + 2, top + h * 0.52, cx + w / 2 + foot * 0.6, gy);
     c.closePath();
-  }, R.slime, [2, 4, 5], 3.5);
-  // inner shimmer and specular, restrained
-  flat(ctx, ell(cx - w * 0.18, top + h * 0.28, w * 0.1, h * 0.08, -0.5), R.slime[6]);
-  // moss sprout on the crown
-  shade(ctx, ell(cx + 3, top + 2, 7, 4, -0.2), R.moss, [2, 4, 5], 1.5);
-  shade(ctx, ell(cx - 3, top + 1, 4, 3, 0.4), R.moss, [3, 4, 5], 1);
-  // eyes
-  if (!opts.closed) {
-    for (const k of [-1, 1]) {
-      flat(ctx, ell(cx + k * w * 0.17, top + h * 0.5, 2.6, 3.6), R.ink[0]);
-      flat(ctx, ell(cx + k * w * 0.17 - 0.8, top + h * 0.5 - 1.2, 0.9, 0.9), R.cream[5]);
-    }
+  };
+}
+
+function slimeFrame(w, h, o = {}) {
+  const ctx = frame(64, 56);
+  const cx = 32, gy = 52, top = gy - h;
+  const lean = o.lean ?? 2, foot = o.foot ?? 2;
+  const body = slimeBody(w, h, lean, foot);
+  shade(ctx, body, R.bed, [1, 3, 4], 3.5);
+  ctx.save();
+  body(ctx);
+  ctx.clip();
+  // murky core, suspended silt, a darker wet foot
+  flat(ctx, ell(cx - w * 0.06 + lean * 0.5, top + h * 0.6, w * 0.26, h * 0.24), R.slime[3]);
+  const r = mulberry32(o.seed ?? 5);
+  for (let i = 0; i < 8; i++) flat(ctx, ell(cx + (r() - 0.5) * w * 0.6, top + h * (0.42 + r() * 0.45), 0.9 + r(), 0.8 + r() * 0.5), R.dirt[2 + Math.floor(r() * 2)]);
+  // mud picked up from the ground darkens and browns the lower body
+  for (let i = 0; i < 9; i++) {
+    const t = r();
+    flat(ctx, ell(cx + (r() - 0.5) * (w + 6), gy - 1 - t * t * h * 0.45, 1.5 + r() * 3, 1 + r() * 1.4, (r() - 0.5) * 0.6), R.dirt[1 + Math.floor(r() * 2)]);
+  }
+  flat(ctx, ell(cx, gy + 1, w * 0.56 + foot, 4), R.bed[1]);
+  ctx.restore();
+  // pebble stuck in the right flank
+  shade(ctx, ell(cx + w * 0.3, top + h * 0.64, 4.2, 3.4, 0.3), R.lime, [2, 4, 5], 1.2);
+  // moss cap, off-centre, slipping down the left side
+  const mx = cx + lean - 3;
+  for (const [dx, dy, rx, ry] of [[-7, 4, 6, 4], [0, 1, 6, 3.6], [6, 2, 4, 3], [-11, 8, 3.5, 3], [3, 5, 3, 2]]) shade(ctx, ell(mx + dx, top + dy, rx, ry, 0.2), R.moss, [2, 4, 5], 1.2);
+  for (const [dx, dy, l] of [[-13, 9, 5], [-8, 7, 4], [6, 5, 3]]) flat(ctx, rrect(mx + dx, top + dy, 1.6, l, 0.8), R.moss[2]);
+  // root sprig with one leaf
+  ctx.strokeStyle = rgbStr(R.bark[3]);
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(mx + 4, top);
+  ctx.quadraticCurveTo(mx + 6, top - 7, mx + 11 + (o.sway ?? 0), top - 9);
+  ctx.stroke();
+  shade(ctx, ell(mx + 12 + (o.sway ?? 0), top - 10, 3.4, 1.8, -0.4), R.leaf, [3, 5, 6], 0.8);
+  // eyes: two small pits set low and off-centre, one larger
+  const ex = cx + lean * 0.6 - 2, ey = top + h * 0.52;
+  if (!o.closed) {
+    flat(ctx, ell(ex - 5, ey, 1.9, 2.4), R.ink[0]);
+    flat(ctx, ell(ex + 4, ey + 0.8, 1.5, 1.9), R.ink[0]);
+    flat(ctx, ell(ex - 5.5, ey - 0.8, 0.7, 0.7), R.cream[3]);
   } else {
     ctx.fillStyle = rgbStr(R.ink[0]);
-    for (const k of [-1, 1]) ctx.fillRect(cx + k * w * 0.17 - 3, top + h * 0.5, 6, 1.5);
+    ctx.fillRect(ex - 8, ey, 5, 1.5);
+    ctx.fillRect(ex + 3, ey + 1, 4, 1.5);
   }
-  return finish(ctx, { outline: [12, 20, 22] });
+  // a wet glint
+  flat(ctx, ell(cx - w * 0.26, top + h * 0.34, 2.4, 1.3, -0.5), R.cream[3]);
+  // landing: drops thrown out at the foot
+  if (o.drips) for (const [dx, s] of [[-w / 2 - foot - 4, 2], [w / 2 + foot + 3, 1.6], [-w / 2 - foot - 8, 1.2]]) flat(ctx, ell(cx + dx, gy - 1, s * 1.4, s), R.bed[3]);
+  return finish(ctx, { outline: [12, 16, 18] });
+}
+
+// Death: the body collapses into a puddle of mud and moss, seen from above.
+function slimeSplat(f) {
+  const ctx = frame(64, 40);
+  const cx = 32, cy = 20, s = [0.75, 1, 1.05][f];
+  const r = mulberry32(17);
+  flat(ctx, ell(cx, cy, 22 * s, 11 * s), R.bed[2]);
+  for (let i = 0; i < 6; i++) {
+    const a = r() * Math.PI * 2;
+    flat(ctx, ell(cx + Math.cos(a) * 20 * s, cy + Math.sin(a) * 10 * s, 4 + r() * 3, 2.5 + r() * 2), R.bed[2]);
+  }
+  flat(ctx, ell(cx - 2, cy - 1, 13 * s, 6 * s), R.bed[3]);
+  if (f < 2) flat(ctx, ell(cx - 6, cy - 3, 3, 1.5), R.cream[3]);
+  shade(ctx, ell(cx + 7, cy + 1, 7, 3.5, 0.2), R.moss, [2, 4, 5], 1);
+  shade(ctx, ell(cx + 11, cy + 4, 3, 2.4), R.lime, [2, 4, 5], 1);
+  return finish(ctx, { outline: null });
 }
 
 function slimeFrames() {
   return {
-    idle: [slimeFrame(40, 26), slimeFrame(37, 29)],
-    hop: [slimeFrame(46, 21), slimeFrame(30, 38), slimeFrame(42, 25)],
-    hurt: [slimeFrame(44, 24, { closed: true })],
+    idle: [slimeFrame(40, 26, { sway: 0 }), slimeFrame(38, 28, { lean: 3, sway: 1.5 })],
+    // squash (anticipation), stretch up, falling, landing compression
+    hop: [slimeFrame(48, 19, { lean: 0, foot: 4 }), slimeFrame(30, 38, { lean: 4, foot: -3, sway: -2 }), slimeFrame(35, 31, { lean: 1, foot: 0, sway: 2 }), slimeFrame(54, 15, { lean: 0, foot: 6, drips: true })],
+    hurt: [slimeFrame(44, 24, { closed: true, lean: -4 })],
+    splat: [slimeSplat(0), slimeSplat(1), slimeSplat(2)],
   };
 }
 
@@ -791,42 +847,104 @@ function butterfly(f) {
 }
 
 // ------------------------------------------------------------ creatures
-// Thornbulb: a rooted seed-spitter. Closed, opening, firing.
-function bulbFrame(open, opts = {}) {
+// Thornbulb: a rooted seed-spitter grown out of the ground. Its roots grip
+// the soil, a rosette of broad leaves sits around the stalk and the bud
+// droops while dormant. Stages: 0 dormant, 1 alert (bud raised), 2 swelling
+// (petals parting, the seed glowing inside), 3 fired (open, recoiling).
+function bulbFrame(stage, P = R.rust, T = [1, 3, 4]) {
   const ctx = frame(72, 80);
   const cx = 36, gy = 76;
-  // base leaves
-  for (const [a, l] of [[-2.6, 26], [-0.5, 24], [-2.0, 20], [-1.1, 22]]) {
-    const ex = cx + Math.cos(a) * l, ey = gy - 4 + Math.sin(a) * l * 0.35;
-    shade(ctx, poly([[cx - 3, gy - 2], [ex, ey - 6], [ex + (ex > cx ? 4 : -4), ey], [cx + 3, gy - 1]]), R.leaf, [2, 4, 5], 1.5);
+  // roots spread over the ground
+  ctx.lineCap = 'round';
+  for (const [ex, ey, wdt] of [[-24, -1, 3.2], [22, 0, 3.4], [-12, 1, 2.4], [13, -2, 2.2], [-30, -3, 1.6], [30, -2, 1.4]]) {
+    ctx.strokeStyle = rgbStr(R.bark[wdt > 2.5 ? 3 : 2]);
+    ctx.lineWidth = wdt;
+    ctx.beginPath();
+    ctx.moveTo(cx + ex * 0.15, gy - 6);
+    ctx.quadraticCurveTo(cx + ex * 0.55, gy - 5 + ey, cx + ex, gy - 2 + ey);
+    ctx.stroke();
   }
-  // stalk
-  shade(ctx, rrect(cx - 4, gy - 30, 8, 28, 3), R.moss, [2, 3, 4], 1.5);
-  const by = gy - 44 - (opts.lunge ? 4 : 0);
-  if (open === 0) {
-    shade(ctx, ell(cx, by, 15, 18), R.rust, [1, 3, 4], 3);
+  // leaf rosette: back leaves darker, tips drooping when dormant
+  const droop = stage === 0 ? 4 : 0;
+  const leaf = (a, l, tones) => {
+    const ex = cx + Math.cos(a) * l, ey = gy - 8 + Math.sin(a) * l * 0.45 + droop * Math.abs(Math.cos(a));
+    const nx = -Math.sin(a) * 9, nz = Math.cos(a) * 3.5;
+    shade(ctx, poly([[cx - 2, gy - 7], [cx + (ex - cx) * 0.5 + nx, (gy - 7 + ey) / 2 - 4 + nz], [ex, ey], [cx + (ex - cx) * 0.55 - nx * 0.4, (gy - 7 + ey) / 2 + 2], [cx + 2, gy - 5]]), R.leaf, tones, 1.6);
+    ctx.strokeStyle = rgbStr(R.leaf[2]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, gy - 6);
+    ctx.lineTo(cx + (ex - cx) * 0.85, gy - 6 + (ey - gy + 6) * 0.85);
+    ctx.stroke();
+  };
+  for (const a of [-2.2, -0.9, -1.55]) leaf(a, 22, [1, 3, 4]);
+  for (const a of [-2.9, -0.2, 2.8, 0.35]) leaf(a, 27, [2, 4, 6]);
+  // stalk and bud placement per stage
+  const S = [
+    { bx: cx + 13, by: gy - 30, tilt: 1.0, s: 0.92 },
+    { bx: cx + 2, by: gy - 46, tilt: 0.12, s: 1 },
+    { bx: cx, by: gy - 48, tilt: 0, s: 1.14 },
+    { bx: cx - 3, by: gy - 43, tilt: -0.2, s: 1 },
+  ][stage];
+  ctx.strokeStyle = rgbStr(R.moss[2]);
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(cx, gy - 7);
+  ctx.quadraticCurveTo(cx - 3, S.by + 20, S.bx, S.by + 12 * S.s);
+  ctx.stroke();
+  ctx.strokeStyle = rgbStr(R.moss[4]);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 2, gy - 9);
+  ctx.quadraticCurveTo(cx - 5, S.by + 20, S.bx - 2, S.by + 12 * S.s);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(S.bx, S.by);
+  ctx.rotate(S.tilt);
+  ctx.scale(S.s, S.s);
+  if (stage < 3) {
+    shade(ctx, (c, nb) => {
+      if (!nb) c.beginPath();
+      c.moveTo(0, -18);
+      c.bezierCurveTo(10, -14, 15, -2, 13, 6);
+      c.bezierCurveTo(11, 13, -11, 13, -13, 6);
+      c.bezierCurveTo(-15, -2, -10, -14, 0, -18);
+      c.closePath();
+    }, P, T, 3);
+    ctx.strokeStyle = rgbStr(P[T[0]]);
+    ctx.lineWidth = 1.4;
     for (const k of [-1, 0, 1]) {
-      ctx.strokeStyle = rgbStr(R.rust[1]);
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cx + k * 6, by - 16);
-      ctx.quadraticCurveTo(cx + k * 10, by, cx + k * 5, by + 16);
+      ctx.moveTo(k * 3, -16);
+      ctx.quadraticCurveTo(k * 11, -2, k * 6, 11);
       ctx.stroke();
     }
-    // thorns
-    for (const [x, y, d] of [[cx - 15, by - 2, -1], [cx + 15, by + 2, 1], [cx - 11, by + 12, -1], [cx + 10, by - 12, 1]])
-      flat(ctx, poly([[x, y - 2], [x + d * 6, y], [x, y + 2]]), R.cream[3]);
-    flat(ctx, poly([[cx - 4, by - 17], [cx, by - 24], [cx + 4, by - 17]]), R.leaf[4]);
-  } else {
-    // petals peeled back, a gold seed-core inside
-    for (const [a, l] of [[-2.5, 20], [-0.6, 20], [-1.55, 22], [-3.1, 15], [0.0, 15]]) {
-      const ex = cx + Math.cos(a) * l, ey = by + Math.sin(a) * l;
-      shade(ctx, poly([[cx - 6, by + 4], [ex - 5, ey], [ex, ey - 4], [ex + 5, ey], [cx + 6, by + 4]]), R.rust, [1, 3, 5], 1.5);
+    if (stage === 2) {
+      // petals parting at the tip, the seed showing through
+      flat(ctx, poly([[-4, -17], [0, -6], [4, -17]]), R.gold[4]);
+      flat(ctx, ell(0, -9, 2.4, 3), R.gold[5]);
     }
-    shade(ctx, ell(cx, by + 4, 12, 10), R.rust, [0, 1, 2], 2);
-    flat(ctx, ell(cx, by + 3, 7 + open, 6 + open), R.gold[open > 1 ? 5 : 4]);
-    flat(ctx, ell(cx - 2, by + 1, 2.5, 2), R.cream[5]);
+    for (const [x, y, d] of [[-13, 0, -1], [13, 3, 1], [-9, 9, -1], [10, -10, 1]]) flat(ctx, poly([[x, y - 1.6], [x + d * 5, y], [x, y + 1.6]]), R.cream[3]);
+    // sepals
+    for (const k of [-1, 1]) shade(ctx, poly([[0, 13], [k * 12, 6], [k * 4, 15]]), R.leaf, [2, 4, 5], 1);
+  } else {
+    // open: petals peeled back around a gold seed-core
+    for (const [a, l] of [[-2.55, 20], [-0.6, 20], [-1.57, 22], [-3.2, 16], [0.06, 16]]) {
+      const ex = Math.cos(a) * l, ey = Math.sin(a) * l + 2;
+      const px = -Math.sin(a) * 8, py = Math.cos(a) * 8;
+      shade(ctx, (c, nb) => {
+        if (!nb) c.beginPath();
+        c.moveTo(-px * 0.5, 4 - py * 0.5);
+        c.quadraticCurveTo(ex * 0.6 - px, ey * 0.6 - py, ex, ey);
+        c.quadraticCurveTo(ex * 0.6 + px, ey * 0.6 + py, px * 0.5, 4 + py * 0.5);
+        c.closePath();
+      }, P, [T[0], T[1] + 1, T[2] + 1], 1.5);
+    }
+    shade(ctx, ell(0, 4, 12, 10), P, [0, 1, 2], 2);
+    flat(ctx, ell(0, 3, 8, 7), R.gold[4]);
+    flat(ctx, ell(-2, 1, 2.5, 2), R.cream[5]);
   }
+  ctx.restore();
   return finish(ctx);
 }
 
@@ -837,43 +955,105 @@ function seed() {
   return finish(ctx, { outline: [20, 12, 8] });
 }
 
-// Stone Sentinel: a squat, heavy guardian with a gold mask
+// Stone Sentinel: a guardian assembled from the sanctuary's own masonry and
+// worn like it. Broad plinth feet under short thick legs, a torso that widens
+// into a heavy lintel of shoulders with the head sunk between them, long drum
+// arms with squared fists hanging near the knees. A carved sun panel with worn
+// gold, cracks, lichen and moss. Poses are keyed for weight: walk lifts one
+// foot and shifts the mass over the other, contact settles it, raise lifts
+// the whole stack, slam drops it and drives both fists into the ground.
 function sentinelFrame(pose) {
   const ctx = frame(120, 132);
-  const cx = 60, gy = 128;
-  const L = R.lime, sq = pose === 'slam' ? 6 : 0, up = pose === 'raise' ? 1 : 0;
-  const step = pose === 'walk1' ? 3 : pose === 'walk0' ? -3 : 0;
-  // legs: stubby pillars
-  shade(ctx, rrect(cx - 26 + step, gy - 30, 18, 30, 4), L, [1, 2, 4], 2);
-  shade(ctx, rrect(cx + 8 - step, gy - 30, 18, 30, 4), L, [1, 2, 3], 2);
-  // body block, chipped
-  const top = 44 + sq;
-  shade(ctx, poly([[cx - 34, top + 6], [cx - 26, top - 2], [cx + 28, top - 2], [cx + 36, top + 8], [cx + 32, gy - 24], [cx - 32, gy - 24]]), L, [1, 3, 5], 4);
-  ctx.fillStyle = rgbStr(L[1]);
-  ctx.fillRect(cx - 30, top + 30, 62, 2);
-  ctx.fillRect(cx - 8, top + 2, 2, 28);
-  // a carved glyph on the chest
-  flat(ctx, rrect(cx - 10, top + 40, 20, 12, 2), R.indigo[1]);
-  flat(ctx, rrect(cx - 6, top + 43, 12, 6, 1), R.indigo[up ? 5 : 3]);
-  // moss on the shoulders
+  const cx = 60, gy = 128, L = R.lime;
+  const raise = pose === 'raise', slam = pose === 'slam';
+  const w0 = pose === 'walk0', w1 = pose === 'walk1';
+  const drop = slam ? 12 : raise ? -6 : pose === 'contact' ? 2 : 0;
+  const shift = w0 ? -3 : w1 ? 3 : 0;
   const r = mulberry32(7);
-  for (let i = 0; i < 18; i++) flat(ctx, ell(cx - 30 + r() * 64, top + r() * 8, 2 + r() * 3, 1.4), R.moss[2 + Math.floor(r() * 3)]);
-  // head and mask
-  const hy = top - 14 + (up ? -4 : 0);
-  shade(ctx, rrect(cx - 16, hy - 14, 32, 26, 5), L, [1, 3, 5], 2.5);
-  shade(ctx, poly([[cx - 12, hy - 6], [cx + 12, hy - 6], [cx + 9, hy + 10], [cx, hy + 14], [cx - 9, hy + 10]]), R.gold, [1, 3, 5], 2);
-  flat(ctx, rrect(cx - 9, hy - 1, 18, 3, 1), up || pose === 'slam' ? R.cream[5] : R.indigo[1]);
-  // arms
-  if (up) {
-    for (const k of [-1, 1]) {
-      shade(ctx, rrect(cx + k * 38 - 9, top - 34, 18, 40, 6), L, k < 0 ? [1, 3, 5] : [1, 2, 4], 2.5);
-      shade(ctx, rrect(cx + k * 38 - 12, top - 46, 24, 18, 6), L, [1, 3, 5], 2);
-    }
-  } else {
-    const ay = pose === 'slam' ? 20 : 4;
-    for (const k of [-1, 1]) {
-      shade(ctx, rrect(cx + k * 40 - 9, top + 2, 18, 40 + ay * 0.5, 6), L, k < 0 ? [1, 3, 5] : [1, 2, 4], 2.5);
-      shade(ctx, rrect(cx + k * 40 - 12, top + 38 + ay, 24, 18, 6), L, [1, 3, 5], 2);
+  const tx = cx + shift;
+  const hipY = gy - 36 + drop;
+  const crack = (pts) => {
+    ctx.strokeStyle = rgbStr(L[0]);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
+    ctx.stroke();
+  };
+  // feet and legs
+  for (const k of [-1, 1]) {
+    const lift = (k < 0 && w1) || (k > 0 && w0) ? 6 : 0;
+    const fx = cx + k * (slam ? 22 : 17);
+    const fy = gy - lift;
+    shade(ctx, rrect(fx - 11 + shift * 0.4, hipY + 4, 22, fy - 7 - hipY - 4, 4), L, k < 0 ? [1, 3, 4] : [1, 2, 3], 2.5);
+    flat(ctx, rrect(fx - 11 + shift * 0.4, (hipY + fy) / 2 - 1, 22, 1.6, 0), L[1]);
+    shade(ctx, poly([[fx - 17, fy], [fx - 14, fy - 9], [fx + 14, fy - 9], [fx + 17, fy]]), L, [1, 3, 5], 2);
+    flat(ctx, rrect(fx - 17, fy - 2, 34, 2, 0), L[1]);
+    flat(ctx, rrect(fx - 4, fy - 9, 1.4, 7, 0), L[2]);
+    if (slam) for (const d of [-1, 1]) flat(ctx, ell(fx + d * 18, gy - 2, 3, 2), R.cream[3]);
+  }
+  // torso: narrower waist widening into the chest
+  const by = hipY - 30;
+  shade(ctx, poly([[tx - 34, by], [tx + 34, by], [tx + 26, hipY + 4], [tx - 26, hipY + 4]]), L, [1, 3, 5], 4);
+  ctx.fillStyle = rgbStr(L[1]);
+  ctx.fillRect(tx - 31, by + 12, 62, 1.5);
+  ctx.fillRect(tx - 28, hipY - 2, 56, 1.5);
+  ctx.fillRect(tx - 8, by, 1.5, 12);
+  ctx.fillRect(tx + 16, by + 12, 1.5, hipY - by - 14);
+  crack([[tx + 20, by + 13], [tx + 23, by + 20], [tx + 21, by + 26], [tx + 24, hipY - 3]]);
+  // carved sun panel, gold worn back to the stone
+  flat(ctx, rrect(tx - 12, by + 15, 22, 13, 1.5), R.indigo[1]);
+  flat(ctx, ell(tx - 1, by + 21.5, 4, 4), raise || slam ? R.gold[5] : R.gold[3]);
+  ctx.strokeStyle = rgbStr(R.gold[2]);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    if (i === 4) continue;
+    const a = (i / 6) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(tx - 1 + Math.cos(a) * 5, by + 21.5 + Math.sin(a) * 4.5);
+    ctx.lineTo(tx - 1 + Math.cos(a) * 9, by + 21.5 + Math.sin(a) * 5.5);
+    ctx.stroke();
+  }
+  // head, sunk between the shoulders
+  const sy = by - 10;
+  const hy = sy - 17 + (slam ? 6 : 0) + (raise ? -3 : 0);
+  shade(ctx, rrect(tx - 12, hy, 24, 24, 3), L, [1, 3, 5], 2.5);
+  shade(ctx, poly([[tx - 7, hy - 3], [tx + 7, hy - 3], [tx + 9, hy + 1], [tx - 9, hy + 1]]), L, [2, 4, 5], 1);
+  shade(ctx, poly([[tx - 13, hy + 5], [tx + 13, hy + 5], [tx + 12, hy + 12], [tx - 12, hy + 12]]), R.gold, [1, 3, 4], 1.5);
+  flat(ctx, rrect(tx + 5, hy + 5, 4, 7, 0), R.gold[1]);
+  flat(ctx, rrect(tx - 8, hy + 7.5, 16, 2.4, 1), raise || slam ? R.cream[5] : R.indigo[2]);
+  // shoulders: a lintel with rounded ends, one corner broken off and mossed
+  shade(ctx, poly([[tx - 40, sy + 13], [tx - 36, sy + 1], [tx + 38, sy], [tx + 44, sy + 13]]), L, [1, 4, 6], 3);
+  shade(ctx, ell(tx + 38, sy + 9, 11, 9), L, [1, 3, 5], 2.5);
+  shade(ctx, ell(tx - 36, sy + 10, 9, 8), L, [1, 3, 5], 2.5);
+  flat(ctx, poly([[tx - 40, sy + 2], [tx - 30, sy + 1], [tx - 38, sy + 8]]), L[2]);
+  flat(ctx, rrect(tx - 30, sy + 13, 62, 2, 0), L[1]);
+  crack([[tx - 4, sy + 1], [tx - 2, sy + 6], [tx - 5, sy + 13]]);
+  for (let i = 0; i < 18; i++) flat(ctx, ell(tx - 40 + r() * 34, sy + 1 + r() * 4, 2 + r() * 3, 1.3), R.moss[2 + Math.floor(r() * 3)]);
+  for (let i = 0; i < 6; i++) flat(ctx, ell(tx + 10 + r() * 28, sy + 1 + r() * 3, 1.5 + r() * 2, 1.1), R.moss[3 + Math.floor(r() * 2)]);
+  for (const [dx, l] of [[-36, 12], [-31, 7], [-26, 9]]) flat(ctx, rrect(tx + dx, sy + 4, 1.7, l, 0.8), R.moss[2]);
+  for (let i = 0; i < 7; i++) flat(ctx, ell(tx - 28 + r() * 56, by + 2 + r() * (hipY - by - 4), 1.2, 1), R.cream[2]);
+  // arms: drum segments ending in a squared fist
+  for (const k of [-1, 1]) {
+    const ax = tx + k * 39;
+    const tones = k < 0 ? [1, 3, 5] : [1, 2, 4];
+    if (raise) {
+      shade(ctx, rrect(ax - 9 + k * 3, sy - 18, 18, 26, 5), L, tones, 2.5);
+      shade(ctx, rrect(ax - 12 + k * 2, sy - 34, 24, 19, 4), L, [1, 3, 5], 2);
+      flat(ctx, rrect(ax - 12 + k * 2, sy - 26, 24, 1.5, 0), L[1]);
+    } else if (slam) {
+      const fx = tx + k * 43;
+      shade(ctx, poly([[ax - 9, sy + 10], [ax + 9, sy + 10], [fx + 10, gy - 18], [fx - 10, gy - 18]]), L, tones, 2.5);
+      shade(ctx, rrect(fx - 13, gy - 20, 26, 19, 4), L, [1, 3, 5], 2);
+      for (let i = 0; i < 4; i++) flat(ctx, ell(fx + (r() - 0.5) * 32, gy - 2 - r() * 6, 2.5 + r() * 2, 1.8), R.cream[2 + Math.floor(r() * 2)]);
+    } else {
+      const swing = (w0 ? 2 : w1 ? -2 : 0) * k;
+      shade(ctx, rrect(ax - 9, sy + 12, 18, 24, 6), L, tones, 2.5);
+      flat(ctx, rrect(ax - 9, sy + 24, 18, 1.5, 0), L[1]);
+      shade(ctx, rrect(ax - 8, sy + 35 + swing, 16, 16, 4), L, tones, 2);
+      if (k > 0) flat(ctx, rrect(ax - 8, sy + 41 + swing, 16, 3, 0), R.gold[2]);
+      shade(ctx, rrect(ax - 12, sy + 49 + swing, 24, 20, 4), L, [1, 3, 5], 2);
+      flat(ctx, rrect(ax - 12, sy + 56 + swing, 24, 1.4, 0), L[1]);
     }
   }
   return finish(ctx);
@@ -893,107 +1073,271 @@ function ring() {
   return finish(ctx, { outline: null });
 }
 
-// Dusk moth: indigo wings with gold eyespots
+// Dusk moth: hooked dark indigo forewings with a pale margin, a cross band
+// and a gold eyespot, short tailed rust hindwings, a furred pale thorax.
+// Frames 0-3 are one wingbeat (up, mid, down, mid); frame 4 is the
+// swept-back glide used when it swoops.
 function mothFrame(f) {
   const ctx = frame(72, 56);
-  const cx = 36, cy = 28;
-  const span = [1, 0.62, 0.25][f];
-  const lift = [-8, 0, 6][f];
+  const cx = 36, cy = 26;
+  const span = [1, 0.84, 0.5, 0.78, 0.66][f];
+  const lift = [-11, -2, 8, 3, 3][f];
+  const back = f === 4 ? 8 : 0;
   for (const k of [-1, 1]) {
-    shade(ctx, poly([[cx, cy - 2], [cx + k * 32 * span, cy - 16 + lift], [cx + k * 30 * span, cy + 2 + lift * 0.5], [cx + k * 6, cy + 4]]), R.indigo, [1, 3, 4], 2);
-    shade(ctx, poly([[cx, cy + 2], [cx + k * 20 * span, cy + 14 + lift * 0.3], [cx + k * 6, cy + 14]]), R.indigo, [0, 2, 3], 1.5);
-    if (span > 0.4) {
-      flat(ctx, ell(cx + k * 18 * span, cy - 6 + lift * 0.6, 4 * span + 1, 4), R.gold[4]);
-      flat(ctx, ell(cx + k * 18 * span, cy - 6 + lift * 0.6, 1.8 * span + 0.6, 2), R.ink[0]);
+    // hindwing: rounded, with a short tail
+    const hx = cx + k * 19 * span, hy = cy + 6 + lift * 0.35 + back;
+    shade(ctx, (c, nb) => {
+      if (!nb) c.beginPath();
+      c.moveTo(cx + k * 2, cy + 1);
+      c.quadraticCurveTo(hx + k * 2, hy - 7, hx, hy + 2);
+      c.quadraticCurveTo(hx - k * 2, cy + 14 + back, cx + k * 9, cy + 21 + back * 0.5);
+      c.lineTo(cx + k * 6, cy + 14 + back * 0.4);
+      c.quadraticCurveTo(cx + k * 3, cy + 12, cx + k * 2, cy + 6);
+      c.closePath();
+    }, R.rust, [0, 2, 3], 1.4);
+    // forewing: hooked apex, concave outer margin
+    const ax = cx + k * 31 * span, ay = cy - 14 + lift + back;
+    const wing = (c, nb) => {
+      if (!nb) c.beginPath();
+      c.moveTo(cx + k * 2, cy - 4);
+      c.quadraticCurveTo(cx + k * 14 * span, ay - 4, ax, ay);
+      c.quadraticCurveTo(ax + k * 3, ay + 2, ax - k * 1, ay + 6);
+      c.quadraticCurveTo(cx + k * 22 * span, ay + 8, cx + k * 22 * span, cy + 3 + lift * 0.45 + back);
+      c.quadraticCurveTo(cx + k * 10, cy + 6, cx + k * 3, cy + 4);
+      c.closePath();
+    };
+    flat(ctx, wing, R.cream[2]);
+    ctx.save();
+    ctx.translate(-k * 1.6, -1.3);
+    shade(ctx, wing, R.indigo, [0, 2, 3], 2);
+    ctx.restore();
+    // pale cross band and the eyespot
+    if (span > 0.55) {
+      ctx.strokeStyle = rgbStr(R.indigo[4]);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx + k * 9 * span, ay + 10 - lift * 0.3);
+      ctx.quadraticCurveTo(cx + k * 15 * span, ay + 3, cx + k * 24 * span, ay + 3);
+      ctx.stroke();
+      const ex = cx + k * 16 * span, ey = cy - 4 + lift * 0.55 + back * 0.7;
+      flat(ctx, ell(ex, ey, 3 * span + 1, 2.8), R.gold[3]);
+      flat(ctx, ell(ex, ey, 1.4 * span + 0.5, 1.4), R.ink[0]);
     }
   }
-  shade(ctx, ell(cx, cy + 3, 4, 11), R.bark, [1, 3, 4], 1.5);
+  // furred thorax and banded abdomen
+  shade(ctx, ell(cx, cy + 8, 3, 8), R.bark, [1, 3, 4], 1.2);
+  for (let i = 0; i < 3; i++) flat(ctx, rrect(cx - 2.6, cy + 6 + i * 3.4, 5.2, 1.2, 0.5), R.bark[1]);
+  shade(ctx, ell(cx, cy - 1, 3.8, 4), R.cream, [1, 2, 3], 1.2);
   for (const k of [-1, 1]) {
-    ctx.strokeStyle = rgbStr(R.bark[2]);
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = rgbStr(R.cream[2]);
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - 7);
-    ctx.quadraticCurveTo(cx + k * 5, cy - 16, cx + k * 9, cy - 15);
+    ctx.moveTo(cx + k, cy - 4);
+    ctx.quadraticCurveTo(cx + k * 4, cy - 12, cx + k * 9, cy - 12);
     ctx.stroke();
   }
   return finish(ctx, { outline: [14, 14, 26] });
 }
 
-// The Root Warden: an antlered guardian of stone and root, gold-masked.
-function wardenFrame(pose) {
+// The Root Warden: an antlered guardian whose back is a fallen shrine roof of
+// fitted slabs riding on a body of roots, gold-masked like the sentinels.
+// Phase two (p2) has lost slabs, a cracked mask and a snapped antler; 'down'
+// is the collapse at the end of the fight.
+function wardenFrame(pose, p2 = false) {
   const ctx = frame(232, 212);
   const cx = 116, gy = 206;
   const L = R.lime;
-  const rear = pose === 'rear', stomp = pose === 'stomp', charge = pose === 'charge';
+  const rear = pose === 'rear', stomp = pose === 'stomp', charge = pose === 'charge', hurt = pose === 'hurt', down = pose === 'down';
   const bob = pose === 'idle1' ? 2 : 0;
-  const lift = rear ? -22 : stomp ? 8 : 0;
-  // hind legs
-  shade(ctx, poly([[cx - 52, gy - 70 + bob], [cx - 30, gy - 70 + bob], [cx - 28, gy - 4], [cx - 54, gy - 4]]), R.bark, [1, 2, 3], 3);
-  shade(ctx, poly([[cx + 30, gy - 70 + bob], [cx + 52, gy - 70 + bob], [cx + 54, gy - 4], [cx + 28, gy - 4]]), R.bark, [1, 2, 3], 3);
-  // body: a mossy stone carapace on a body of roots
-  const by = gy - 120 + bob + lift * 0.4;
-  shade(ctx, (c, nb) => {
-    if (!nb) c.beginPath();
-    c.moveTo(cx - 80, by + 60);
-    c.bezierCurveTo(cx - 90, by + 10, cx - 50, by - 22, cx, by - 24);
-    c.bezierCurveTo(cx + 50, by - 22, cx + 90, by + 10, cx + 80, by + 60);
-    c.bezierCurveTo(cx + 60, by + 80, cx - 60, by + 80, cx - 80, by + 60);
-    c.closePath();
-  }, L, [1, 3, 5], 5);
-  // plates of the carapace
-  ctx.strokeStyle = rgbStr(L[1]);
-  ctx.lineWidth = 2;
-  for (const [x0, y0, x1, y1] of [[cx - 60, by + 6, cx - 20, by + 30], [cx + 60, by + 6, cx + 20, by + 30], [cx - 40, by + 44, cx + 40, by + 44], [cx, by - 20, cx, by + 40]]) {
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.stroke();
-  }
+  const lift = rear ? -30 : stomp ? 10 : down ? 40 : hurt ? 6 : charge ? 4 : 0;
   const r = mulberry32(31);
-  for (let i = 0; i < 90; i++) {
-    const a = r() * Math.PI, d = r();
-    flat(ctx, ell(cx + Math.cos(a + Math.PI) * d * 78, by + 8 - Math.sin(a) * d * 26 + r() * 10, 3 + r() * 4, 2 + r() * 2), R.moss[2 + Math.floor(r() * 4)]);
-  }
-  // roots spilling from under the carapace
-  for (let i = 0; i < 9; i++) {
-    const x = cx - 70 + i * 17;
-    ctx.strokeStyle = rgbStr(R.bark[2 + (i % 2)]);
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(x, by + 62);
-    ctx.quadraticCurveTo(x + (r() - 0.5) * 20, by + 82, x + (r() - 0.5) * 16, by + 98);
-    ctx.stroke();
-  }
-  // forelegs
-  const fl = rear ? -30 : stomp ? 6 : charge ? -8 : 0;
+  ctx.lineCap = 'round';
+  // hind legs: bundled roots ending in splayed root toes
+  const hl = down ? 30 : 0;
   for (const k of [-1, 1]) {
-    shade(ctx, poly([[cx + k * 46 - 12, by + 40], [cx + k * 46 + 12, by + 40], [cx + k * 50 + 12, gy - 6 + fl], [cx + k * 50 - 14, gy - 6 + fl]]), L, k < 0 ? [1, 3, 5] : [1, 2, 4], 3);
-    shade(ctx, rrect(cx + k * 50 - 17, gy - 18 + fl, 34, 16, 5), R.bark, [1, 2, 3], 2);
-  }
-  // head: a long gold mask with indigo eyes, crowned with root-antlers
-  const hy = by - 10 + (charge ? 26 : 0) + lift * 0.6;
-  for (const k of [-1, 1]) {
-    ctx.strokeStyle = rgbStr(R.bark[3]);
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(cx + k * 14, hy - 20);
-    ctx.quadraticCurveTo(cx + k * 40, hy - 60, cx + k * 70, hy - 66);
-    ctx.stroke();
-    ctx.lineWidth = 4;
-    for (const [t, l] of [[0.45, 22], [0.75, 18]]) {
-      const bx = cx + k * (14 + 56 * t), byy = hy - 20 - 46 * t;
+    const x0 = cx + k * 44;
+    shade(ctx, poly([[x0 - 13, gy - 74 + bob + hl], [x0 + 13, gy - 74 + bob + hl], [x0 + k * 4 + 12, gy - 6], [x0 + k * 4 - 14, gy - 6]]), R.bark, [1, 2, 3], 3);
+    ctx.strokeStyle = rgbStr(R.bark[1]);
+    ctx.lineWidth = 1.5;
+    for (const o of [-5, 3]) {
       ctx.beginPath();
-      ctx.moveTo(bx, byy);
-      ctx.lineTo(bx + k * 6, byy - l);
+      ctx.moveTo(x0 + o, gy - 70 + hl);
+      ctx.lineTo(x0 + k * 4 + o * 1.3, gy - 10);
       ctx.stroke();
     }
-    flat(ctx, ell(cx + k * 64, hy - 66, 8, 5), R.leaf[4]);
+    ctx.strokeStyle = rgbStr(R.bark[2]);
+    ctx.lineWidth = 4;
+    for (const d of [-1, 0, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + k * 4 + d * 6, gy - 8);
+      ctx.quadraticCurveTo(x0 + k * 4 + d * 12, gy - 3, x0 + k * 4 + d * 20, gy - 2);
+      ctx.stroke();
+    }
   }
-  shade(ctx, poly([[cx - 26, hy - 26], [cx + 26, hy - 26], [cx + 22, hy + 14], [cx, hy + 34], [cx - 22, hy + 14]]), R.gold, [1, 3, 5], 3);
-  flat(ctx, poly([[cx - 2, hy - 22], [cx + 2, hy - 22], [cx + 2, hy + 26], [cx - 2, hy + 26]]), R.gold[1]);
-  const eye = pose === 'hurt' ? R.cream[5] : rear || charge ? R.cream[4] : R.indigo[4];
+  // the root body under the roof
+  const by = gy - 122 + bob + lift * 0.45;
+  shade(ctx, ell(cx, by + 52, 74, 30), R.bark, [0, 1, 2], 4);
+  // roots spilling out under the rim
+  for (let i = 0; i < 10; i++) {
+    const x = cx - 72 + i * 16;
+    ctx.strokeStyle = rgbStr(R.bark[2 + (i % 2)]);
+    ctx.lineWidth = 4 + (i % 3);
+    ctx.beginPath();
+    ctx.moveTo(x, by + 56);
+    ctx.quadraticCurveTo(x + (r() - 0.5) * 22, by + 78, x + (r() - 0.5) * 18, Math.min(gy - 8, by + 100));
+    ctx.stroke();
+  }
+  // the roof: a domed shell of slabs with a ridge and a gold rim band
+  const shell = (c, nb) => {
+    if (!nb) c.beginPath();
+    c.moveTo(cx - 86, by + 54);
+    c.bezierCurveTo(cx - 94, by + 6, cx - 52, by - 26, cx, by - 30);
+    c.bezierCurveTo(cx + 52, by - 26, cx + 94, by + 6, cx + 86, by + 54);
+    c.lineTo(cx + 74, by + 62);
+    c.lineTo(cx - 74, by + 62);
+    c.closePath();
+  };
+  shade(ctx, shell, L, [1, 2, 4], 5);
+  ctx.save();
+  shell(ctx);
+  ctx.clip();
+  // weight: the lower courses sit in the shadow of the roof's own curve
+  flat(ctx, ell(cx + 12, by + 70, 100, 30), L[2]);
+  // slab courses following the dome
+  const missing = p2 ? new Set(['1,1', '2,4', '0,3', '2,0']) : new Set();
+  const rows = [[by - 30, by - 4, 4], [by - 4, by + 24, 5], [by + 24, by + 52, 6]];
+  rows.forEach(([y0, y1, n], ri) => {
+    const off = ri % 2 ? 0.5 : 0;
+    for (let j = 0; j < n; j++) {
+      const x0 = cx - 92 + ((j + off) / n) * 184, x1 = cx - 92 + ((j + 1 + off) / n) * 184;
+      if (missing.has(`${ri},${j}`)) {
+        flat(ctx, poly([[x0 + 2, y0 + 2], [x1 - 2, y0 + 2], [x1 - 4, y1 - 2], [x0 + 4, y1 - 2]]), R.bark[1]);
+        ctx.strokeStyle = rgbStr(R.bark[3]);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x0 + 6, y1 - 4);
+        ctx.quadraticCurveTo((x0 + x1) / 2, y0 + 4, x1 - 6, y0 + 8);
+        ctx.stroke();
+        continue;
+      }
+      flat(ctx, poly([[x0 + 1, y0 + 1], [x1 - 1, y0 + 1], [x1 - 1, y0 + 3], [x0 + 1, y0 + 3]]), L[ri === 0 ? 5 : 4]);
+      ctx.fillStyle = rgbStr(L[1]);
+      ctx.fillRect(x1 - 1.5, y0, 2, y1 - y0);
+    }
+    ctx.fillStyle = rgbStr(L[1]);
+    ctx.fillRect(cx - 100, y1 - 1, 200, 2.5);
+  });
+  if (p2) {
+    ctx.strokeStyle = rgbStr(L[0]);
+    ctx.lineWidth = 1.6;
+    for (const [x0, y0, x1, y1] of [[cx + 30, by - 20, cx + 48, by + 20], [cx - 50, by + 10, cx - 30, by + 50]]) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo((x0 + x1) / 2 + 5, (y0 + y1) / 2);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    }
+  }
+  // moss on the crown of the roof
+  for (let i = 0; i < 130; i++) {
+    const a = r() * Math.PI, d = Math.sqrt(r());
+    flat(ctx, ell(cx + Math.cos(a + Math.PI) * d * 80, by - 18 + (1 - Math.sin(a)) * 30 * d + r() * 8, 3 + r() * 4, 1.8 + r() * 2), R.moss[2 + Math.floor(r() * 4)]);
+  }
+  ctx.restore();
+  // gold rim band along the eaves
+  ctx.strokeStyle = rgbStr(R.gold[2]);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - 84, by + 52);
+  ctx.quadraticCurveTo(cx, by + 66, cx + 84, by + 52);
+  ctx.stroke();
+  // forelegs: stone columns bound in root, with root hooves
+  const fl = rear ? -40 : stomp ? 4 : charge ? -10 : down ? 20 : 0;
+  const spread = stomp ? 8 : 0;
+  for (const k of [-1, 1]) {
+    const x0 = cx + k * (48 + spread);
+    const footY = down ? gy - 4 : gy - 6 + fl;
+    const fx = x0 + k * (down ? 34 : 8);
+    // a leg of braided root under a stone pauldron
+    shade(ctx, poly([[x0 - 15, by + 36], [x0 + 15, by + 36], [fx + 16, footY - 10], [fx - 16, footY - 10]]), R.bark, k < 0 ? [1, 3, 4] : [1, 2, 3], 3);
+    ctx.strokeStyle = rgbStr(R.bark[1]);
+    ctx.lineWidth = 1.6;
+    for (const o of [-8, 0, 7]) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + o, by + 40);
+      ctx.quadraticCurveTo((x0 + fx) / 2 + o + 4, (by + footY) / 2, fx + o * 1.2, footY - 12);
+      ctx.stroke();
+    }
+    shade(ctx, poly([[x0 - 20, by + 44], [x0 - 16, by + 30], [x0 + 16, by + 30], [x0 + 20, by + 44]]), L, [1, 3, 5], 2);
+    flat(ctx, rrect(x0 - 19, by + 42, 38, 2, 0), R.gold[2]);
+    ctx.strokeStyle = rgbStr(R.bark[3]);
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(x0 - 13, by + 50);
+    ctx.quadraticCurveTo(x0 + 2, by + 60, x0 + 13, by + 56);
+    ctx.moveTo((x0 + fx) / 2 - 15, (by + footY) / 2 + 12);
+    ctx.quadraticCurveTo((x0 + fx) / 2, (by + footY) / 2 + 20, (x0 + fx) / 2 + 15, (by + footY) / 2 + 10);
+    ctx.stroke();
+    shade(ctx, rrect(fx - 20, footY - 14, 40, 14, 5), R.bark, [1, 2, 3], 2);
+    ctx.strokeStyle = rgbStr(R.bark[2]);
+    ctx.lineWidth = 3;
+    for (const d of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(fx + d * 14, footY - 3);
+      ctx.quadraticCurveTo(fx + d * 22, footY, fx + d * 27, footY + 2);
+      ctx.stroke();
+    }
+    if (stomp) for (let i = 0; i < 5; i++) flat(ctx, ell(fx + (r() - 0.5) * 50, gy - 4 - r() * 8, 3 + r() * 2, 2), R.cream[2 + Math.floor(r() * 2)]);
+  }
+  // head: a long gold mask under a heavy brow, crowned with root-antlers
+  const hy = by + 6 + (charge ? 24 : 0) + (down ? 44 : 0) + lift * 0.3;
+  for (const k of [-1, 1]) {
+    const snapped = p2 && k > 0;
+    const reach = snapped ? 0.45 : 1;
+    const tipx = cx + k * 80 * reach, tipy = hy - 74 * reach + (down ? 34 : 0);
+    ctx.strokeStyle = rgbStr(R.bark[3]);
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(cx + k * 14, hy - 20);
+    ctx.quadraticCurveTo(cx + k * 44 * reach, hy - 70 * reach + (down ? 24 : 0), tipx, tipy);
+    ctx.stroke();
+    ctx.strokeStyle = rgbStr(R.bark[4]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + k * 14 - 2, hy - 22);
+    ctx.quadraticCurveTo(cx + k * 44 * reach - 2, hy - 72 * reach + (down ? 24 : 0), tipx - 2, tipy - 2);
+    ctx.stroke();
+    ctx.strokeStyle = rgbStr(R.bark[3]);
+    ctx.lineWidth = 4;
+    for (const [t, l] of snapped ? [[0.5, 14]] : [[0.4, 24], [0.72, 18]]) {
+      const bx = cx + k * (14 + 62 * t * reach), byy = hy - 20 - 52 * t * reach + (down ? 12 : 0);
+      ctx.beginPath();
+      ctx.moveTo(bx, byy);
+      ctx.lineTo(bx + k * 7, byy - l);
+      ctx.stroke();
+    }
+    if (snapped) flat(ctx, ell(tipx, tipy, 4, 3), R.cream[2]);
+    else {
+      flat(ctx, ell(tipx - k * 2, tipy - 2, 9, 5, k * 0.4), R.leaf[3]);
+      flat(ctx, ell(tipx - k * 4, tipy - 4, 5, 3, k * 0.4), R.leaf[5]);
+    }
+  }
+  shade(ctx, poly([[cx - 30, hy - 30], [cx + 30, hy - 30], [cx + 26, hy - 18], [cx - 26, hy - 18]]), L, [1, 3, 5], 2);
+  shade(ctx, poly([[cx - 26, hy - 20], [cx + 26, hy - 20], [cx + 22, hy + 14], [cx, hy + 36], [cx - 22, hy + 14]]), R.gold, [1, 3, 5], 3);
+  flat(ctx, poly([[cx - 2, hy - 18], [cx + 2, hy - 18], [cx + 2, hy + 28], [cx - 2, hy + 28]]), R.gold[1]);
+  for (const k of [-1, 1]) flat(ctx, poly([[cx + k * 12, hy + 16], [cx + k * 18, hy + 10], [cx + k * 16, hy + 20]]), R.gold[1]);
+  if (p2) {
+    ctx.strokeStyle = rgbStr(R.gold[0]);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx - 20, hy - 14);
+    ctx.lineTo(cx - 8, hy + 2);
+    ctx.lineTo(cx - 12, hy + 12);
+    ctx.lineTo(cx - 4, hy + 26);
+    ctx.stroke();
+  }
+  const eye = down ? R.ink[0] : hurt ? R.cream[5] : rear || charge || stomp ? R.cream[4] : R.indigo[4];
   for (const k of [-1, 1]) flat(ctx, poly([[cx + k * 6, hy - 8], [cx + k * 20, hy - 12], [cx + k * 17, hy - 2], [cx + k * 6, hy - 2]]), eye);
-  if (stomp) for (let i = 0; i < 8; i++) flat(ctx, ell(cx - 90 + r() * 180, gy - 6 - r() * 10, 4, 3), R.cream[3]);
   return finish(ctx, { outline: [24, 18, 14] });
 }
 
@@ -1182,12 +1526,17 @@ export function buildAtlas() {
   for (let f = 0; f < 3; f++) add(`puff.${f}`, puff(f));
   for (let f = 0; f < 3; f++) add(`splash.${f}`, splash(f));
   for (let f = 0; f < 2; f++) add(`fly.${f}`, butterfly(f));
-  [0, 1, 2].forEach((o) => add(`bulb.${o}`, bulbFrame(o)));
+  for (let o = 0; o < 4; o++) add(`bulb.a.${o}`, bulbFrame(o, R.rust));
+  for (let o = 0; o < 4; o++) add(`bulb.b.${o}`, bulbFrame(o, R.hair, [0, 2, 3]));
   add('seed', seed());
-  for (const p of ['walk0', 'walk1', 'raise', 'slam', 'idle']) add(`sentinel.${p}`, sentinelFrame(p));
+  for (const p of ['walk0', 'walk1', 'contact', 'raise', 'slam', 'idle']) add(`sentinel.${p}`, sentinelFrame(p));
   add('ring', ring());
-  for (let f = 0; f < 3; f++) add(`moth.${f}`, mothFrame(f));
-  for (const p of ['idle0', 'idle1', 'rear', 'charge', 'stomp', 'hurt']) add(`warden.${p}`, wardenFrame(p));
+  for (let f = 0; f < 5; f++) add(`moth.${f}`, mothFrame(f));
+  for (const p of ['idle0', 'idle1', 'rear', 'charge', 'stomp', 'hurt']) {
+    add(`warden.${p}`, wardenFrame(p));
+    add(`warden.${p}.b`, wardenFrame(p, true));
+  }
+  add('warden.down', wardenFrame('down', true));
   add('sunstone.0', sunstone(false));
   add('sunstone.1', sunstone(true));
   add('lever.0', lever(false));
