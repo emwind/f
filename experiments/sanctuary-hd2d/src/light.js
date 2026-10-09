@@ -18,6 +18,7 @@ export const LIGHT = {
   spriteAmbient: [0.52, 0.56, 0.6],
   spriteSun: [0.62, 0.55, 0.42],
   locals: [], // {x,y,z,r,color:[r,g,b],k}
+  zoneTint: null, // optional (x, z) => {amb, sun}: per-area sprite light
 };
 
 export function setSunFromAngles(azDeg, elDeg) {
@@ -34,7 +35,8 @@ export function sunAngles() {
 
 // sunlit: 0..1 from the collider's occlusion test
 export function spriteTint(x, y, z, sunlit, out = [0, 0, 0, 1]) {
-  const a = LIGHT.spriteAmbient, s = LIGHT.spriteSun;
+  const zt = LIGHT.zoneTint && LIGHT.zoneTint(x, z);
+  const a = zt ? zt.amb : LIGHT.spriteAmbient, s = zt ? zt.sun : LIGHT.spriteSun;
   // sheltered low ground gets less sky
   const sky = 0.8 + Math.min(1, Math.max(0, (y + 0.5) / 4)) * 0.2;
   out[0] = a[0] * sky + s[0] * sunlit;

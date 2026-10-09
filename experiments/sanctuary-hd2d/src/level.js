@@ -438,8 +438,34 @@ export function buildOverworld() {
   ];
   const waterfalls = [{ x0: 31.0, x1: 34.0, z: 3.06, y0: -0.1, y1: 8.0 }];
 
+  // authored plant compositions: frames for the key views, placed before the
+  // niche scatter fills in around them
+  const dressing = [
+    // forest start: ferns frame the first path, a dark thicket on the left
+    { x: 2.6, z: 77.2, niche: 'forest', r: 1.8 },
+    { x: 12.4, z: 76.4, niche: 'forest', r: 1.3 },
+    { x: 9.2, z: 84.6, niche: 'forest', r: 2.0, density: 0.8 },
+    // the ring of fallen stones in the clearing is overgrown inside
+    { x: 14.9, z: 67.4, niche: 'wall', r: 1.1, density: 1.3 },
+    { x: 20.0, z: 66.6, niche: 'forest', r: 1.5 },
+    { x: 35.4, z: 66.0, niche: 'forest', r: 1.4 },
+    // courtyard: a flowering lawn to the east, a drift in the foreground
+    { x: 40.5, z: 57.5, niche: 'meadow', r: 2.2, density: 1.1 },
+    { x: 45.0, z: 61.4, niche: 'meadow', r: 1.3 },
+    { x: 7.5, z: 61.0, niche: 'meadow', r: 1.8 },
+    { x: 27.2, z: 61.3, niche: 'meadow', r: 1.0, density: 1.2 },
+    // the ravine: reeds and ferns where the river meets the banks
+    { x: 16.0, z: 20.6, niche: 'water', r: 1.2 },
+    { x: 22.6, z: 21.2, niche: 'water', r: 1.0 },
+    { x: 36.6, z: 22.4, niche: 'water', r: 1.3 },
+    // the waterfall's upper banks
+    { x: 29.4, z: 9.5, niche: 'water', r: 1.0 },
+    { x: 35.5, z: 14.2, niche: 'water', r: 1.1 },
+  ];
+
   return {
     id: 'overworld',
+    dressing,
     ...P,
     walkMaxZ: 86,
     solids,

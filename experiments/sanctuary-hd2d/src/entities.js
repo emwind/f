@@ -311,9 +311,12 @@ export class Player {
     } else if (this.attackT > 0) {
       anim = 'atk';
       f = Math.min(2, Math.floor((0.3 - this.attackT) / 0.1));
-    } else if (!this.grounded || this.dashT > 0) {
-      anim = 'jump';
+    } else if (this.dashT > 0) {
+      anim = 'dash';
       f = 0;
+    } else if (!this.grounded) {
+      anim = 'jump';
+      f = this.vy > 0.5 ? 0 : 1;
     } else if (len2(this.vx, this.vz) > 1) {
       anim = 'walk';
       f = Math.floor(this.anim) % 4;
@@ -323,7 +326,7 @@ export class Player {
     const alpha = this.dead ? Math.max(0, 1 - this.deadT * 0.8) : 1;
     // afterimages while dashing: a couple of cool, dithered copies
     for (const a of this.after) {
-      G.actors.add({ rect: `hero.${a.dir}.jump.0`, x: a.x, y: a.y - 0.06, z: a.z, w: 1.2, h: 1.8, flip: a.flip, tint: [0.45, 0.55, 0.75, a.t * 3] });
+      G.actors.add({ rect: `hero.${a.dir}.dash.0`, x: a.x, y: a.y - 0.06, z: a.z, w: 1.2, h: 1.8, flip: a.flip, tint: [0.45, 0.55, 0.75, a.t * 3] });
     }
     G.actors.add({
       rect: `hero.${dir}.${anim}.${f}`,

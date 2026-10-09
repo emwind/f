@@ -5,6 +5,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import { T, WATER_DEPTH, terrainHeight, tileHeight } from './level.js';
 import { fbm2, fbm3, smoothstep, clamp, mulberry32 } from './noise.js';
 import { patchWorldMaterial, worldUniforms } from './shaderPatch.js';
+import { buildMasonryKit } from './masonryKit.js';
 
 export const STEP = 0.36; // how high you can walk up without jumping
 const TEX_SCALE = 0.25; // one texture repeat per 4 units
@@ -54,6 +55,70 @@ class Geo {
   }
 }
 
+// Per-tile damp and wear fields, blurred and sampled per vertex. Damp gathers
+// where water sits, at the foot of walls and under canopies; wear follows the
+// bare paths and the open middles of paved floors.
+function dampWearField(L) {
+  const W = L.W, D = L.D;
+  const damp = new Float32Array(W * D), wear = new Float32Array(W * D);
+  const ty = (x, z) => (x < 0 || z < 0 || x >= W || z >= D ? -1 : L.TY[z * W + x]);
+  const hh = (x, z) => (x < 0 || z < 0 || x >= W || z >= D ? 99 : L.H[z * W + x]);
+  const shrine = L.id === 'shrine';
+  for (let z = 0; z < D; z++)
+    for (let x = 0; x < W; x++) {
+      const i = z * W + x, h = L.H[i], t = L.TY[i];
+      let d = shrine ? 0.35 : 0, wallBase = false, open = 0;
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const r = Math.hypot(dx, dz);
+          if (ty(x + dx, z + dz) === T.WATER) d = Math.max(d, 1 - r / 3);
+        }
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nh = hh(x + dx, z + dz);
+        if (nh > h + 0.7 && nh < 50) wallBase = true;
+        if (Math.abs(nh - h) < 0.1 && ty(x + dx, z + dz) === t) open++;
+      }
+      if (wallBase) d = Math.max(d, dz0(z) ? 0.75 : 0.6);
+      // runoff: damp collects on the south (lower, shaded) side of walls
+      function dz0(zz) { return hh(x, zz - 1) > h + 0.7; }
+      for (const tr of L.trees ?? []) {
+        const r = Math.hypot(tr.x - x - 0.5, tr.z - z - 0.5);
+        const R = tr.size === 'giant' ? 4 : tr.size === 'big' ? 3.2 : tr.size === 'small' ? 1.8 : 2.6;
+        if (r < R) d = Math.max(d, 0.55 * (1 - r / R) + 0.2);
+      }
+      damp[i] = Math.min(1, d);
+      if (t === T.DIRT) wear[i] = 1;
+      else if (t === T.FLAG && open === 4 && !wallBase) wear[i] = 0.55;
+    }
+  // blur twice so the fields read as soft gradients, then bleed wear onto verges
+  const blur = (a) => {
+    const o = new Float32Array(a.length);
+    for (let z = 0; z < D; z++)
+      for (let x = 0; x < W; x++) {
+        let s = 0, n = 0;
+        for (let dz = -1; dz <= 1; dz++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx, zz = z + dz;
+            if (xx < 0 || zz < 0 || xx >= W || zz >= D) continue;
+            const k = dx === 0 && dz === 0 ? 2 : 1;
+            s += a[zz * W + xx] * k;
+            n += k;
+          }
+        o[z * W + x] = s / n;
+      }
+    return o;
+  };
+  const dampB = blur(blur(damp));
+  const wearB = blur(wear);
+  const at = (a, x, z) => {
+    const fx = clamp(x - 0.5, 0, W - 1.001), fz = clamp(z - 0.5, 0, D - 1.001);
+    const x0 = Math.floor(fx), z0 = Math.floor(fz), ax = fx - x0, az = fz - z0;
+    const x1 = Math.min(W - 1, x0 + 1), z1 = Math.min(D - 1, z0 + 1);
+    return (a[z0 * W + x0] * (1 - ax) + a[z0 * W + x1] * ax) * (1 - az) + (a[z1 * W + x0] * (1 - ax) + a[z1 * W + x1] * ax) * az;
+  };
+  return { damp: dampB, wear: wearB, at };
+}
+
 function groundMaterial(tex) {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   const base = mat;
@@ -62,16 +127,16 @@ function groundMaterial(tex) {
   base.onBeforeCompile = (shader) => {
     inner(shader);
     Object.assign(shader.uniforms, {
-      tGrass: { value: tex.grass }, tDirt: { value: tex.dirt }, tFlag: { value: tex.flag },
+      tGrass: { value: tex.grass }, tDirt: { value: tex.dirt }, tFlag: { value: tex.flag }, tFlagDamp: { value: tex.flagDamp },
       tRock: { value: tex.cliff }, tBed: { value: tex.bed }, tRoot: { value: tex.bark }, tNoise: { value: tex.noise },
     });
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 splatA; attribute vec2 splatB; varying vec4 vSA; varying vec2 vSB;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSA = splatA; vSB = splatB;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 splatA; attribute vec2 splatB; attribute vec2 dampWear; varying vec4 vSA; varying vec2 vSB; varying vec2 vDW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSA = splatA; vSB = splatB; vDW = dampWear;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform sampler2D tGrass, tDirt, tFlag, tRock, tBed, tRoot, tNoise;
-        varying vec4 vSA; varying vec2 vSB;`)
+        uniform sampler2D tGrass, tDirt, tFlag, tFlagDamp, tRock, tBed, tRoot, tNoise;
+        varying vec4 vSA; varying vec2 vSB; varying vec2 vDW;`)
       .replace('#include <map_fragment>', `
         vec2 wuv = vWPos.xz * 0.25;
         float n1 = texture2D(tNoise, wuv * 1.3).r;
@@ -86,15 +151,27 @@ function groundMaterial(tex) {
         w[5] = vSB.y + (n1 - 0.5) * 0.3;
         int best = 0; float bw = -9.0; float sw = -9.0;
         for (int q = 0; q < 6; q++) { if (w[q] > bw) { sw = bw; bw = w[q]; best = q; } else if (w[q] > sw) sw = w[q]; }
+        // damp: water, shade and wall bases; wear: the walked routes
+        float damp = clamp(vDW.x + (n2 - 0.5) * 0.35 + (n1 - 0.5) * 0.2, 0.0, 1.0);
+        float wear = clamp(vDW.y + (n3 - 0.5) * 0.3, 0.0, 1.0);
         vec4 tc;
-        if (best == 0) tc = texture2D(tGrass, wuv);
+        if (best == 0) {
+          tc = texture2D(tGrass, wuv);
+          // trampled verge: grass thins toward the bare path
+          tc.rgb = mix(tc.rgb, texture2D(tDirt, wuv).rgb * 1.04, smoothstep(0.45, 0.9, wear) * 0.55);
+          tc.rgb *= mix(1.0, 0.88, damp);
+        }
         else if (best == 1) tc = texture2D(tDirt, wuv);
-        else if (best == 2) tc = texture2D(tFlag, wuv);
+        else if (best == 2) {
+          tc = mix(texture2D(tFlag, wuv), texture2D(tFlagDamp, wuv), smoothstep(0.38, 0.62, damp));
+          // walked paving is worn smooth and a touch paler
+          tc.rgb = mix(tc.rgb, texture2D(tFlag, wuv, 3.5).rgb * 1.03, smoothstep(0.3, 0.8, wear) * 0.3);
+        }
         else if (best == 3) tc = texture2D(tRock, wuv * vec2(1.0, 1.0) + vec2(0.13, 0.4));
         else if (best == 4) tc = texture2D(tBed, wuv);
         else tc = texture2D(tRoot, wuv);
         // a thin shadowed seam where one ground type laps over another
-        if (bw - sw < 0.07) tc.rgb *= (best == 0 ? 0.62 : 0.8);
+        if (bw - sw < 0.07) tc.rgb *= (best == 0 ? mix(0.86, 0.7, damp) : 0.86);
         diffuseColor *= tc;
       `);
   };
@@ -137,6 +214,7 @@ export function buildWorld(L, tex) {
       }
     ampField = { W: VW, a };
   }
+  const field = dampWearField(L);
   const varTint = (x, z) => 0.9 + fbm2(x * 0.13, z * 0.13, 3, 21) * 0.2;
 
   // ambient occlusion / rim light for a point on a top surface
@@ -157,7 +235,7 @@ export function buildWorld(L, tex) {
   // per pixel with a noisy argmax, so transitions are crisp but hand-shaped.
   const N = SUB;
   const ground = new Geo();
-  const splatA = [], splatB = [];
+  const splatA = [], splatB = [], dw = [];
   const typeW = (x, z, hv) => {
     const w = [0, 0, 0, 0, 0, 0];
     for (let a = -1; a <= 1; a++)
@@ -187,6 +265,7 @@ export function buildWorld(L, tex) {
           const w = st ? [0, 0, 0, 0, 0, 0].map((_, q) => (q === L.TY[i] ? 1 : 0)) : typeW(x, z, y);
           splatA.push(w[T.GRASS], w[T.DIRT], w[T.FLAG], w[T.ROCK]);
           splatB.push(w[T.WATER], w[T.ROOT]);
+          dw.push(field.at(field.damp, x, z), field.at(field.wear, x, z));
         }
       }
       for (let j = 0; j < N; j++)
@@ -200,6 +279,7 @@ export function buildWorld(L, tex) {
     const g = ground.build();
     g.setAttribute('splatA', new THREE.Float32BufferAttribute(splatA, 4));
     g.setAttribute('splatB', new THREE.Float32BufferAttribute(splatB, 2));
+    g.setAttribute('dampWear', new THREE.Float32BufferAttribute(dw, 2));
     const mesh = new THREE.Mesh(g, groundMaterial(tex));
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
@@ -313,6 +393,8 @@ export function buildWorld(L, tex) {
     mesh.receiveShadow = true;
     group.add(mesh);
   }
+  // authored coping, capstones, corners and collapsed ends over the masonry edges
+  if (!/[?&]nokit/.test(location.search)) group.add(buildMasonryKit(L, mats.masonry, mats[T.FLAG]));
 
   // --- free-standing solids: bridge decks, piers, the beam, the roof
   const solids = expandSolids(L.solids);
@@ -447,6 +529,33 @@ function buildRoof(s, topMat, sideMat) {
 function buildWater(L, tex) {
   const g = new Geo();
   const isW = (x, z) => x >= 0 && z >= 0 && x < L.W && z < L.D && L.TY[z * L.W + x] === T.WATER;
+  // distance from the shore (tiles), so broad water darkens toward its middle
+  const dist = new Float32Array(L.W * L.D).fill(9);
+  for (let tz = 0; tz < L.D; tz++)
+    for (let tx = 0; tx < L.W; tx++) {
+      if (!isW(tx, tz)) continue;
+      let d = 9;
+      for (let dz = -3; dz <= 3; dz++)
+        for (let dx = -3; dx <= 3; dx++) if (!isW(tx + dx, tz + dz) && tx + dx >= 0 && tz + dz >= 0 && tx + dx < L.W && tz + dz < L.D) d = Math.min(d, Math.hypot(dx, dz));
+      dist[tz * L.W + tx] = d;
+    }
+  // flow: churned water under the falls and in narrow channels; still pools get none
+  const flowAt = (x, z) => {
+    let f = 0;
+    for (const wf of L.waterfalls ?? []) {
+      const dx = Math.max(wf.x0 - x, 0, x - wf.x1), dz = z - wf.z;
+      if (dz > -0.5) f = Math.max(f, 1 - Math.hypot(dx, Math.max(0, dz)) / 3.5);
+    }
+    let n = 0;
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (isW(Math.floor(x) + dx, Math.floor(z) + dz)) n++;
+    if (n < 14) f = Math.max(f, 0.4);
+    return f;
+  };
+  const vDist = (x, z) => {
+    let d = 0, n = 0;
+    for (const [ox, oz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (isW(x + ox, z + oz)) { d += Math.min(3, dist[(z + oz) * L.W + x + ox]); n++; }
+    return n ? d / n / 3 : 0;
+  };
   for (let tz = 0; tz < L.D; tz++)
     for (let tx = 0; tx < L.W; tx++) {
       if (!isW(tx, tz)) continue;
@@ -458,6 +567,9 @@ function buildWater(L, tex) {
           let shore = 0;
           for (const [ox, oz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (!isW(x + ox, z + oz)) shore = 1;
           ids.push(g.v(x, L.H[tz * L.W + tx] + WATER_DEPTH, z, x * TEX_SCALE, z * TEX_SCALE, shore));
+          const ci = g.c.length - 3;
+          g.c[ci + 1] = flowAt(x, z);
+          g.c[ci + 2] = shore ? 0 : vDist(x, z);
         }
       g.quad(ids[0], ids[2], ids[3], ids[1]);
     }
@@ -475,10 +587,10 @@ function buildWater(L, tex) {
     },
     vertexShader: /* glsl */ `
       attribute vec3 color;
-      varying vec3 vWPos; varying float vViewZ; varying float vShore; varying vec3 vView;
+      varying vec3 vWPos; varying float vViewZ; varying float vShore; varying vec3 vView; varying float vFlow; varying float vDepth;
       void main() {
         vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWPos = wp.xyz; vShore = color.r;
+        vWPos = wp.xyz; vShore = color.r; vFlow = color.g; vDepth = color.b;
         vec4 mv = viewMatrix * wp; vViewZ = -mv.z;
         vView = normalize(cameraPosition - wp.xyz);
         gl_Position = projectionMatrix * mv;
@@ -486,7 +598,7 @@ function buildWater(L, tex) {
     fragmentShader: /* glsl */ `
       uniform sampler2D uRipple; uniform vec3 uShallow; uniform vec3 uDeepW; uniform vec3 uSky; uniform vec3 uSunDir;
       uniform float uTime;
-      varying vec3 vWPos; varying float vViewZ; varying float vShore; varying vec3 vView;
+      varying vec3 vWPos; varying float vViewZ; varying float vShore; varying vec3 vView; varying float vFlow; varying float vDepth;
       float bayer4(vec2 p) {
         ivec2 q = ivec2(mod(p, 4.0)); int i = q.y * 4 + q.x;
         int m[16] = int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);
@@ -494,18 +606,26 @@ function buildWater(L, tex) {
       }
       void main() {
         vec2 uv = vWPos.xz * 0.25;
-        float r1 = texture2D(uRipple, uv * 1.3 + vec2(uTime * 0.02, uTime * 0.035)).r;
-        float r2 = texture2D(uRipple, uv * 0.9 - vec2(uTime * 0.03, -uTime * 0.012) + 0.37).r;
+        float sp = 1.0 + vFlow * 2.5;
+        float r1 = texture2D(uRipple, uv * 1.3 + vec2(uTime * 0.02, uTime * 0.035 * sp)).r;
+        float r2 = texture2D(uRipple, uv * 0.9 - vec2(uTime * 0.03, -uTime * 0.012 * sp) + 0.37).r;
         float ripple = r1 * r2;
         float shore = vShore;
-        vec3 c = mix(uDeepW, uShallow, shore * 0.8);
+        // shallow band hugs the shore; broad water deepens toward its middle
+        vec3 c = mix(uDeepW, uShallow, smoothstep(0.35, 1.0, shore) * 0.85);
+        c *= 1.0 - 0.22 * smoothstep(0.3, 1.0, vDepth);
         float fres = pow(1.0 - clamp(vView.y, 0.0, 1.0), 3.0);
         c = mix(c, uSky * 0.55, fres * 0.6 + 0.08);
         // restrained glints: quantised, dithered, never blown out
         float glint = step(0.35, ripple) * 0.5 + step(0.8, ripple) * 0.5;
-        c += vec3(0.23, 0.24, 0.2) * glint * (0.5 + 0.5 * step(bayer4(gl_FragCoord.xy), 0.6));
-        float foam = smoothstep(0.55, 1.0, shore) * step(bayer4(gl_FragCoord.xy + floor(uTime * 4.0)), 0.35 + r1 * 0.4);
-        c = mix(c, vec3(0.62, 0.64, 0.58), foam * 0.5);
+        c += vec3(0.23, 0.24, 0.2) * glint * (0.35 + 0.35 * vFlow + 0.3 * step(bayer4(gl_FragCoord.xy), 0.6));
+        // a thin wet line where water meets stone, everywhere
+        float edge = smoothstep(0.82, 1.0, shore);
+        c = mix(c, uShallow * 1.35, edge * 0.35);
+        // foam only where the water is moving: under the falls, along channels
+        float churn = clamp(vFlow * (0.4 + shore * 0.9), 0.0, 1.0);
+        float foam = smoothstep(0.2, 0.8, churn) * step(bayer4(gl_FragCoord.xy + floor(uTime * 6.0)), 0.25 + r1 * 0.55);
+        c = mix(c, vec3(0.66, 0.68, 0.62), foam * 0.6);
         float alpha = 0.55 + fres * 0.25 - shore * 0.12;
         gl_FragColor = vec4(c, alpha);
         #include <colorspace_fragment>

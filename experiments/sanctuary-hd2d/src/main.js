@@ -50,11 +50,96 @@ const THEMES = {
   // late light over the hidden vale: low warm sun from behind the tower,
   // the valley floor sinking into warm haze
   vista: {
-    bg: '#a9b3a6', sunAz: 160, sunEl: 30, sunColor: '#ffd9a0', sunI: 2.4, sky: '#c4c8bd', ground: '#4d4232', hemiI: 1.2,
-    fillI: 0.35, deep: '#b5ac86', deepAmt: 0.5, deepTop: 0.5, highY: 30, haze: '#000000', hazeAmt: 0,
-    spriteAmbient: [0.55, 0.55, 0.55], spriteSun: [0.6, 0.5, 0.36], audio: 'day',
+    bg: '#a9b3a6', sunAz: 160, sunEl: 30, sunColor: '#ffd9a0', sunI: 2.7, sky: '#c8ccc0', ground: '#56493a', hemiI: 1.35,
+    fillI: 0.42, deep: '#b5ac86', deepAmt: 0.5, deepTop: 0.5, highY: 30, haze: '#000000', hazeAmt: 0,
+    spriteAmbient: [0.6, 0.6, 0.58], spriteSun: [0.64, 0.53, 0.38], audio: 'day',
   },
 };
+
+// Per-area light inside a map. The sun keeps its angle (shadows never jump);
+// colour, intensity, sky fill, ravine depth tint and the sprite light shift
+// between areas, blended over a few tiles at each border.
+const MOODS = {
+  // cool shade under the canopy, warm broken sun patches
+  'Forest Approach': {
+    sunColor: '#ffd8a2', sunI: 3.55, sky: '#88a2b6', ground: '#3f3a2c', hemiI: 0.92, fillI: 0.16,
+    deep: '#13222a', deepAmt: 0.6, spriteAmbient: [0.37, 0.44, 0.53], spriteSun: [0.88, 0.73, 0.5],
+  },
+  // open sun on warm limestone, the pool as the cool counterpoint
+  'Ruined Courtyard': {
+    sunColor: '#ffe7c2', sunI: 3.6, sky: '#b2c3cc', ground: '#64563f', hemiI: 1.18, fillI: 0.26, deepAmt: 0.42,
+    spriteAmbient: [0.47, 0.51, 0.55], spriteSun: [0.84, 0.74, 0.55],
+  },
+  // the strongest contrast: bright architecture, cool ravine shadow
+  'Overgrown Sanctuary': {
+    sunColor: '#ffe3b2', sunI: 3.75, sky: '#90a9c2', ground: '#433a2d', hemiI: 0.9, fillI: 0.18,
+    deep: '#0f1f2b', deepAmt: 0.7, deepTop: 1.8, spriteAmbient: [0.39, 0.46, 0.56], spriteSun: [0.88, 0.75, 0.53],
+  },
+  // cooler and bluer, darker ambient; the braziers carry the warmth
+  'Underground Shrine': {
+    sunColor: '#9cb6dc', sunI: 1.0, sky: '#4c6286', hemiI: 0.55, fillI: 0.1,
+    spriteAmbient: [0.26, 0.31, 0.44], spriteSun: [0.24, 0.28, 0.37],
+  },
+  // focused and readable: a brighter shaft over the arena, less murk
+  "Warden's Chamber": {
+    sunColor: '#b7c8e0', sunI: 1.55, sky: '#6a7d99', hemiI: 0.78, fillI: 0.16, hazeAmt: 0.75,
+    spriteAmbient: [0.35, 0.39, 0.5], spriteSun: [0.36, 0.38, 0.45],
+  },
+};
+const MOOD_KEYS = ['sunColor', 'sunI', 'sky', 'ground', 'hemiI', 'fillI', 'deep', 'deepAmt', 'deepTop', 'hazeAmt', 'spriteAmbient', 'spriteSun'];
+const moodCache = new Map();
+const _mc = new THREE.Color();
+function moodAt(z) {
+  const key = Math.round(z * 2);
+  const hit = moodCache.get(key);
+  if (hit) return hit;
+  const th = G.theme, L = G.L;
+  const sat = (v) => Math.min(1, Math.max(0, v));
+  const ws = [];
+  for (const a of L.areas) {
+    const m = MOODS[a.name];
+    if (!m) continue;
+    const w = sat((z - a.z0 + 3) / 6) * sat((a.z1 + 3 - z) / 6);
+    if (w > 0) ws.push([m, w]);
+  }
+  const tot = ws.reduce((s, [, w]) => s + w, 0);
+  const out = {};
+  for (const k of MOOD_KEYS) {
+    const base = th[k];
+    if (!tot) out[k] = typeof base === 'string' ? new THREE.Color(base) : base;
+    else if (typeof base === 'string') {
+      let r = 0, g = 0, b = 0;
+      for (const [m, w] of ws) {
+        _mc.set(m[k] ?? base);
+        r += _mc.r * w;
+        g += _mc.g * w;
+        b += _mc.b * w;
+      }
+      out[k] = new THREE.Color(r / tot, g / tot, b / tot);
+    } else if (Array.isArray(base)) out[k] = base.map((_, i) => ws.reduce((s, [m, w]) => s + (m[k] ?? base)[i] * w, 0) / tot);
+    else out[k] = ws.reduce((s, [m, w]) => s + (m[k] ?? base) * w, 0) / tot;
+  }
+  moodCache.set(key, out);
+  return out;
+}
+let moodZ = null;
+function applyMood(z, force) {
+  if (!force && moodZ !== null && Math.abs(z - moodZ) < 0.25) return;
+  moodZ = z;
+  const m = moodAt(z);
+  LIGHT.sunColor.copy(m.sunColor);
+  sun.color.copy(m.sunColor);
+  worldUniforms.uDeep.value.copy(m.deep);
+  worldUniforms.uDeepAmount.value = m.deepAmt;
+  worldUniforms.uDeepTop.value = m.deepTop;
+  worldUniforms.uHazeAmt.value = m.hazeAmt;
+  if (!G.debug.lighting) return;
+  sun.intensity = m.sunI;
+  hemi.color.copy(m.sky);
+  hemi.groundColor.copy(m.ground);
+  hemi.intensity = m.hemiI;
+  fill.intensity = m.fillI;
+}
 
 // ------------------------------------------------------------ game state
 const tex = makeTextures();
@@ -74,6 +159,7 @@ const G = {
   ending: false,
 };
 window.__G = G;
+G.scene = scene;
 
 G.actors = new SpriteBatch(atlas, 512, { castShadow: true });
 G.fx = new SpriteBatch(atlas, 1024);
@@ -193,6 +279,12 @@ function applyTheme(name) {
   worldUniforms.uHazeAmt.value = th.hazeAmt;
   LIGHT.spriteAmbient = th.spriteAmbient.slice();
   LIGHT.spriteSun = th.spriteSun.slice();
+  moodCache.clear();
+  moodZ = null;
+  LIGHT.zoneTint = (x, z) => {
+    const m = moodAt(z);
+    return { amb: m.spriteAmbient, sun: m.spriteSun };
+  };
   audio.setMode(th.audio);
   syncDebugUi();
 }
@@ -278,6 +370,7 @@ function loadMap(id, spawn) {
   G.player = new Player(sp.x, sp.z, collider.ground(sp.x, sp.z, 50), sp.dir);
   G.state.checkpoint = G.state.checkpoint?.map === id ? G.state.checkpoint : { map: id, x: sp.x, z: sp.z, dir: sp.dir };
   G.area = null;
+  applyMood(G.player.z, true);
   G.bossActive = false;
   $('bossbar').classList.remove('on');
   snapCamera();
@@ -667,6 +760,7 @@ function step(dt) {
   if (best && G.input.usePressed) best.interact(G);
 
   // areas, checkpoints, portals
+  applyMood(P.z);
   const L = G.L;
   const area = L.areas.find((a) => P.z >= a.z0 && P.z < a.z1);
   if (area && area !== G.area) {
@@ -794,6 +888,7 @@ function applyLighting() {
     hemi.groundColor.set(th.ground);
     hemi.intensity = th.hemiI;
     fill.intensity = th.fillI;
+    if (G.player) applyMood(G.player.z, true);
   } else {
     sun.intensity = 0;
     fill.intensity = 0;

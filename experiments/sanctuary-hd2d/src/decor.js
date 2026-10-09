@@ -108,28 +108,70 @@ export function dressMap(L, ctx) {
       group.add(root);
     }
 
-    // painted canopy: clumps arranged in a lumpy dome, lit as a whole from the sun side
+    // painted canopy: a few distinct masses carried on visible limbs, at
+    // different heights and reaches, so crowns break into a silhouette with
+    // gaps instead of one round dome. Each mass is a tight knot of clumps,
+    // big in the middle and small at the rim, lit from the sun side and
+    // darker underneath and behind.
     const cr = 1.9 * size;
-    const cy = gy + trunkH + cr * 0.25;
-    const own = { x: t.x + lean, y: cy, z: t.z, r: cr * 1.15 };
+    const topY = gy + trunkH * (0.85 + rnd() * 0.3);
+    const cy = topY + cr * 0.25;
+    const own = { x: t.x + lean, y: cy, z: t.z, r: cr * 1.25 };
     canopies.push(own);
-    const n = Math.round(7 + size * 5);
     const variants = t.rim ? ['canopyCool.0', 'canopyCool.1', 'canopy.3', 'canopy.4'] : ['canopy.0', 'canopy.1', 'canopy.2', 'canopy.3', 'canopy.4', 'canopy.5'];
-    const clumps = [];
-    for (let i = 0; i < n; i++) {
-      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
-      const dx = Math.cos(a) * d * cr, dz = Math.sin(a) * d * cr * 0.75;
-      const dy = (rnd() - 0.35) * cr * 0.7 + (1 - d) * cr * 0.35;
-      clumps.push([dx, dy, dz]);
+    const nMass = t.size === 'small' ? 2 : t.size === 'giant' ? 5 : 3 + (rnd() < 0.4 ? 1 : 0);
+    const a0 = rnd() * Math.PI * 2;
+    const masses = [];
+    for (let m = 0; m < nMass; m++) {
+      const crown = m === 0; // one mass rides high over the trunk
+      const a = a0 + (m / nMass) * Math.PI * 2 + (rnd() - 0.5) * 0.9;
+      const reach = crown ? cr * 0.15 : cr * (0.5 + rnd() * 0.35);
+      const mr = cr * (crown ? 0.55 + rnd() * 0.12 : 0.38 + rnd() * 0.2);
+      const mx = Math.cos(a) * reach, mz = Math.sin(a) * reach * 0.7;
+      const my = crown ? cr * (0.35 + rnd() * 0.2) : cr * (-0.25 + rnd() * 0.45);
+      masses.push({ mx, my, mz, mr });
+      // the limb that carries it
+      if (!crown || nMass < 3) {
+        const sx = t.x + lean * 0.8, sz = t.z, sy = topY - (0.5 + rnd() * 0.6) * size;
+        const ex = t.x + lean + mx * 0.85, ez = t.z + mz * 0.85, ey = cy + my - mr * 0.45;
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(sx, sy, sz),
+          new THREE.Vector3((sx * 0.55 + ex * 0.45), (sy * 0.3 + ey * 0.7) + 0.15 * size, (sz * 0.55 + ez * 0.45)),
+          new THREE.Vector3(ex, ey, ez),
+        ]);
+        const bg = new THREE.TubeGeometry(curve, 8, rTop * 0.75, 5, false);
+        const bp = bg.attributes.position;
+        for (let i = 0; i < bp.count; i++) {
+          const seg = Math.floor(i / 6) / 8;
+          const c = curve.getPoint(Math.min(1, seg));
+          const taper = 1 - seg * 0.6;
+          bp.setXYZ(i, c.x + (bp.getX(i) - c.x) * taper, c.y + (bp.getY(i) - c.y) * taper, c.z + (bp.getZ(i) - c.z) * taper);
+        }
+        bg.computeVertexNormals();
+        shadeColors(bg, () => 0.62);
+        const limb = new THREE.Mesh(bg, mats.bark);
+        limb.castShadow = limb.receiveShadow = true;
+        group.add(limb);
+      }
     }
-    clumps.sort((p1, p2) => p1[2] - p2[2]);
-    for (const [dx, dy, dz] of clumps) {
-      const w = (2.2 + rnd() * 0.9) * size * 0.85;
+    const clumps = [];
+    for (const M of masses) {
+      const n = Math.max(2, Math.round(2 + (M.mr / cr) * 6 * Math.sqrt(size)));
+      for (let i = 0; i < n; i++) {
+        const a = rnd() * Math.PI * 2, d = i === 0 ? 0 : Math.sqrt(rnd());
+        const dx = M.mx + Math.cos(a) * d * M.mr, dz = M.mz + Math.sin(a) * d * M.mr * 0.7;
+        const dy = M.my + (rnd() - 0.4) * M.mr * 0.6 + (1 - d) * M.mr * 0.25;
+        const w = (1.35 + (1 - d) * 1.1 + rnd() * 0.35) * (M.mr / cr) * 2.2 * size * 0.85;
+        clumps.push({ dx, dy, dz, w, d });
+      }
+    }
+    clumps.sort((p1, p2) => p1.dz - p2.dz || p1.dy - p2.dy);
+    for (const { dx, dy, dz, w, d } of clumps) {
       const v = variants[Math.floor(rnd() * variants.length)];
       const r = atlas.rects[v];
       const h = (w * r.ph) / r.pw;
-      // brighter towards the sun side and the top of the dome
-      const k = 0.78 + (dy / cr) * 0.22 + (-dx / cr) * 0.12 + (dz / cr) * 0.06 - (t.rim ? 0.22 : 0);
+      // brighter towards the sun side and the top; underside and back fall off
+      const k = 0.74 + (dy / cr) * 0.26 + (-dx / cr) * 0.12 + (dz / cr) * 0.08 - d * 0.05 - (t.rim ? 0.22 : 0);
       queue(canopyBatch, { rect: v, x: t.x + lean + dx, y: cy + dy - h * 0.55, z: t.z + dz, w, h, sway: 0.05, reveal: true, cast: true, flip: rnd() < 0.5, own }, k, h * 0.6);
     }
   }
@@ -220,11 +262,11 @@ export function dressMap(L, ctx) {
       const gy = H(pr.x, pr.z);
       pr.gy = gy;
       extraSolids.push({ x0: pr.x - 0.3, z0: pr.z - 0.3, x1: pr.x + 0.3, z1: pr.z + 0.3, y0: gy - 0.5, y1: gy + 1.1, kind: 'brazier' });
-      const light = new THREE.PointLight('#ffb15e', L.id === 'shrine' ? 7 : 4.5, L.id === 'shrine' ? 9 : 6.5, 1.3);
+      const light = new THREE.PointLight(L.id === 'shrine' ? '#ff9a48' : '#ffb15e', L.id === 'shrine' ? 7.5 : 4.5, L.id === 'shrine' ? 9 : 6.5, 1.3);
       light.position.set(pr.x, gy + 1.5, pr.z + 0.2);
       group.add(light);
       pointLights.push({ light, base: light.intensity, prop: pr });
-      const local = { x: pr.x, y: gy + 1.2, z: pr.z, r: L.id === 'shrine' ? 7.5 : 5.5, color: [1.0, 0.62, 0.3], k: L.id === 'shrine' ? 1.1 : 0.75 };
+      const local = { x: pr.x, y: gy + 1.2, z: pr.z, r: L.id === 'shrine' ? 7.5 : 5.5, color: L.id === 'shrine' ? [1.0, 0.56, 0.24] : [1.0, 0.62, 0.3], k: L.id === 'shrine' ? 1.2 : 0.75 };
       LIGHT.locals.push(local);
       pr.local = local;
     }
@@ -237,6 +279,7 @@ export function dressMap(L, ctx) {
   const nearTree = (x, z, r) => L.trees.some((t) => (t.x - x) ** 2 + (t.z - z) ** 2 < r * r);
   const underSolid = (x, z, y) => collider.solids.some((s) => x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1 && s.y0 > y);
   const shrine = L.id === 'shrine';
+  const tileInfo = new Array(W * D);
 
   for (let tz = 0; tz < D; tz++) {
     for (let tx = 0; tx < W; tx++) {
@@ -251,50 +294,8 @@ export function dressMap(L, ctx) {
         if (Math.abs(dx) + Math.abs(dz) === 1 && nh < h - 0.8) lipEdge = true;
         if (ty(tx + dx, tz + dz) === T.WATER && type !== T.WATER) waterEdge = true;
       }
-      const n = fbm2(tx * 0.3, tz * 0.3, 3, 5);
       const shade = nearTree(tx + 0.5, tz + 0.5, 3.2);
-      const tries = shrine ? 1 : 3;
-      for (let k = 0; k < tries; k++) {
-        const x = tx + 0.15 + rnd() * 0.7, z = tz + 0.15 + rnd() * 0.7;
-        if (!isFree(x, z, 0.35)) continue;
-        if (underSolid(x, z, h + 0.5)) continue;
-        const y = h;
-        const pick = rnd();
-        if (type === T.WATER) {
-          continue;
-        } else if (shrine) {
-          // the shrine stays bare: only moss and mushrooms where water seeps
-          if ((waterEdge || wallBase) && pick < 0.12) queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.55 }, 1);
-          else if (wallBase && pick < 0.2) queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 3)}`, x, y, z, w: 0.6, sway: 0.01 }, 0.8);
-        } else if (waterEdge && pick < 0.32 && k === 0) {
-          queue(plantBatch, { rect: `reeds.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.75, h: 1.5, sway: 0.07, cast: true }, 1);
-        } else if (type === T.GRASS || type === T.ROOT) {
-          if ((wallBase || shade) && pick < 0.16 && k === 0 && isFree(x, z, 0.9)) {
-            const b = Math.floor(rnd() * 5);
-            queue(plantBatch, { rect: `bush.${b}`, x, y: y - 0.1, z, w: 1.5 + rnd() * 0.5, sway: 0.02, cast: true, flip: rnd() < 0.5, reveal: true }, 0.95);
-            occupied.push([x, z, 0.6]);
-          } else if ((wallBase || shade || n < 0.4) && pick < 0.3 && k === 0) {
-            queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y: y - 0.05, z, w: 1.4 + rnd() * 0.4, sway: 0.035, cast: true, flip: rnd() < 0.5 }, 0.95);
-          } else if (n > 0.6 && pick < 0.12 && k === 0 && !shade) {
-            queue(plantBatch, { rect: `bushDry.${Math.floor(rnd() * 2)}`, x, y: y - 0.1, z, w: 1.3, sway: 0.02, cast: true }, 1);
-          } else if (pick < 0.08 + 0.6 * smoothstep(0.45, 0.7, fbm2(tx * 0.17, tz * 0.17, 3, 9)) + (wallBase || shade ? 0.3 : 0)) {
-            // tufts gather in drifts and against walls; open ground shows its paint
-            const g = Math.floor(rnd() * 6);
-            queue(flatBatch, { rect: `grass.${g}`, x, y: y - 0.02, z, w: 0.6 + rnd() * 0.35, sway: 0.03, flip: rnd() < 0.5 }, 1);
-          } else if (pick < 0.7 && !shade && n > 0.55) {
-            queue(flatBatch, { rect: `flowers.${rnd() < 0.75 ? 0 : 1}`, x, y, z, w: 0.6 }, 1);
-          } else if (shade && pick < 0.76) {
-            queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.55 }, 0.9);
-          }
-        } else if (type === T.DIRT) {
-          if (pick < 0.12) queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x, y, z, w: 0.55, sway: 0.03 }, 1);
-        } else if (type === T.FLAG) {
-          if (wallBase && pick < 0.16 && k === 0) queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y, z, w: 1.2, sway: 0.03, cast: true }, 0.95);
-          else if (pick < (wallBase ? 0.25 : 0.06)) queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x, y, z, w: 0.5, sway: 0.02 }, 1);
-        } else if (type === T.ROCK) {
-          if (pick < 0.08) queue(flatBatch, { rect: `grass.${2 + Math.floor(rnd() * 3)}`, x, y, z, w: 0.5 }, 1);
-        }
-      }
+      tileInfo[i] = { tx, tz, type, h, wallBase, lipEdge, waterEdge, shade };
 
       // --- what hangs from edges: grass lips, vines, ivy
       for (const [dx, dz, ang] of [[0, 1, 0], [1, 0, Math.PI / 2], [-1, 0, -Math.PI / 2]]) {
@@ -321,6 +322,8 @@ export function dressMap(L, ctx) {
       }
     }
   }
+
+  placePlants(L, { tileInfo, queue, plantBatch, flatBatch, rnd, isFree, underSolid, occupied, shrine, collider });
 
   // ------------------------------------------------------------- tint everything
   const tmp = [0, 0, 0, 1];
@@ -484,4 +487,150 @@ export function retint(dressing, collider, mode, shrine) {
     batch.set(i, def);
   }
   for (const b of counters.keys()) b.commit();
+}
+
+// ------------------------------------------------------------------ plants
+// Vegetation is composed as clusters, not sprinkled per tile. Each tile is
+// read for its ecological niche (water edge, damp wall base, forest floor,
+// open meadow, dry stone); clusters seed sparsely by niche, vary strongly in
+// size, put their big plants in the middle and small ones at the rim, and
+// leave the walked routes, stair mouths, jump edges and interactables clear.
+// Authored clusters from the level (L.dressing) are placed first and win.
+const NICHES = {
+  water: { seed: 0.3, gap: 2.2, r: [0.5, 1.4], dens: 3.6 },
+  wall: { seed: 0.26, gap: 2.1, r: [0.5, 1.5], dens: 3.4 },
+  forest: { seed: 0.16, gap: 2.6, r: [0.7, 2.0], dens: 3.0 },
+  meadow: { seed: 0.2, gap: 2.8, r: [0.7, 2.2], dens: 3.4 },
+  stone: { seed: 0.06, gap: 3.0, r: [0.25, 0.6], dens: 3.0 },
+  shrine: { seed: 0.14, gap: 2.2, r: [0.3, 0.8], dens: 2.6 },
+};
+
+function placePlants(L, ctx) {
+  const { tileInfo, queue, plantBatch, flatBatch, rnd, isFree, underSolid, shrine } = ctx;
+  const W = L.W, D = L.D;
+  const info = (x, z) => (x < 0 || z < 0 || x >= W || z >= D ? null : tileInfo[Math.floor(z) * W + Math.floor(x)]);
+
+  // keep-clear mask: stair mouths and interactables stay readable
+  const clear = new Float32Array(W * D);
+  const stamp = (cx, cz, r, v) => {
+    for (let z = Math.floor(cz - r); z <= cz + r; z++)
+      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+        if (x < 0 || z < 0 || x >= W || z >= D) continue;
+        const d = Math.hypot(x + 0.5 - cx, z + 0.5 - cz);
+        if (d < r) clear[z * W + x] = Math.max(clear[z * W + x], v * (1 - d / r));
+      }
+  };
+  for (const i of L.stairs.keys()) stamp((i % W) + 0.5, Math.floor(i / W) + 0.5, 1.8, 1);
+  for (const e of L.entities) if (['sunstone', 'lever', 'chest', 'vessel'].includes(e.type)) stamp(e.x, e.z, 2.0, 1);
+  // fights read better on a clean floor: thin the plants where enemies stand
+  for (const e of L.entities) if (['sentinel', 'boss'].includes(e.type)) stamp(e.x, e.z, 2.6, 0.9);
+  else if (['slime', 'bulb'].includes(e.type)) stamp(e.x, e.z, 1.5, 0.7);
+  for (const p of L.props) if (p.type === 'stele') stamp(p.x, p.z, 1.4, 0.8);
+  for (const c of L.checkpoints) stamp(c.x, c.z, 1.6, 0.7);
+  for (const g of L.gates ?? []) stamp((g.x0 + g.x1) / 2, (g.z0 + g.z1) / 2 + 0.8, 2.2, 1);
+  for (const pt of L.portals ?? []) stamp((pt.x0 + pt.x1) / 2, (pt.z0 + pt.z1) / 2, 2.2, 1);
+
+  const nicheOf = (t) => {
+    if (!t || t.type === T.WATER) return null;
+    if (shrine) return t.wallBase || t.waterEdge ? 'shrine' : null;
+    if (t.waterEdge) return 'water';
+    if (t.wallBase && t.type !== T.DIRT) return 'wall';
+    if (t.type === T.GRASS || t.type === T.ROOT) return t.shade || t.tz > 63 ? 'forest' : 'meadow';
+    if (t.type === T.FLAG || t.type === T.ROCK) return 'stone';
+    return null; // dirt is the walked ground: it stays bare
+  };
+
+  const clusters = [];
+  for (const d of L.dressing ?? []) clusters.push({ ...d, authored: true, h: info(d.x, d.z)?.h ?? 0 });
+  const order = [];
+  for (let i = 0; i < W * D; i++) if (tileInfo[i]) order.push(i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  for (const i of order) {
+    const t = tileInfo[i];
+    const niche = nicheOf(t);
+    if (!niche || clear[i] > 0.3) continue;
+    const N = NICHES[niche];
+    // large-scale patchiness: whole regions are lush or bare
+    const patch = smoothstep(0.32, 0.68, fbm2(t.tx * 0.09, t.tz * 0.09, 3, 77));
+    if (rnd() > N.seed * (0.45 + patch * 1.3)) continue;
+    const x = t.tx + 0.2 + rnd() * 0.6, z = t.tz + 0.2 + rnd() * 0.6;
+    if (clusters.some((c) => (c.x - x) ** 2 + (c.z - z) ** 2 < (NICHES[c.niche]?.gap ?? 2.5) ** 2 * 0.6)) continue;
+    const big = rnd() < 0.18;
+    const r = N.r[0] + rnd() * (N.r[1] - N.r[0]) * (big ? 1.4 : 0.8);
+    clusters.push({ x, z, niche, r, h: t.h });
+  }
+
+  // a sparse base layer of lone tufts so the ground is never sterile
+  for (const i of order) {
+    const t = tileInfo[i];
+    if (shrine || !t || clear[i] > 0.2 || rnd() > 0.07) continue;
+    if (t.type !== T.GRASS && !(t.type === T.FLAG && t.wallBase)) continue;
+    const x = t.tx + 0.15 + rnd() * 0.7, z = t.tz + 0.15 + rnd() * 0.7;
+    if (!isFree(x, z, 0.3) || underSolid(x, z, t.h + 0.5)) continue;
+    queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x, y: t.h - 0.02, z, w: 0.5 + rnd() * 0.2, sway: 0.03, flip: rnd() < 0.5 }, t.shade ? 0.85 : 1);
+  }
+
+  const gauss = () => {
+    let u = 0;
+    for (let k = 0; k < 3; k++) u += rnd();
+    return (u - 1.5) / 1.5;
+  };
+  for (const c of clusters) {
+    const N = NICHES[c.niche] ?? NICHES.meadow;
+    const count = Math.max(1, Math.round(N.dens * Math.PI * c.r * c.r * (c.density ?? 1)));
+    // damp clusters lay a moss patch under themselves
+    if ((c.niche === 'wall' || c.niche === 'water' || c.niche === 'forest' || c.niche === 'shrine') && c.r > 0.7 && rnd() < 0.5)
+      queue(flatBatch, { rect: `moss.${Math.floor(rnd() * 3)}`, mode: 1, x: c.x, y: c.h + 0.015, z: c.z, w: c.r * 1.7, h: c.r * 1.3, angle: rnd() * 6.28 }, c.niche === 'shrine' ? 0.75 : 1.1, 0.1);
+    for (let k = 0; k < count; k++) {
+      const x = c.x + gauss() * c.r, z = c.z + gauss() * c.r * 0.8;
+      const t = info(x, z);
+      if (!t || t.type === T.WATER || Math.abs(t.h - c.h) > 0.05) continue;
+      const ci = Math.floor(z) * W + Math.floor(x);
+      if (clear[ci] > (c.authored ? 0.6 : 0.25)) continue;
+      // keep jump edges clean: nothing within a short step of a drop
+      if (t.lipEdge && ((x % 1) < 0.25 || (x % 1) > 0.75 || (z % 1) < 0.25 || (z % 1) > 0.75)) continue;
+      if (t.type === T.DIRT && !c.authored) continue;
+      if (!isFree(x, z, 0.3) || underSolid(x, z, t.h + 0.5)) continue;
+      const core = 1 - Math.min(1, Math.hypot(x - c.x, (z - c.z) / 0.8) / c.r); // 1 centre, 0 rim
+      plant(c.niche, core, x, t.h, z, t);
+    }
+  }
+
+  function plant(niche, core, x, y, z, t) {
+    const pick = rnd();
+    const flip = rnd() < 0.5;
+    const grass = (w = 0.6, k = 1) => queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x, y: y - 0.02, z, w: w + rnd() * 0.3, sway: 0.03, flip }, k);
+    if (niche === 'water') {
+      if (core > 0.35 && pick < 0.55) queue(plantBatch, { rect: `reeds.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.7 + core * 0.3, h: 1.2 + core * 0.6, sway: 0.07, cast: true, flip }, 1);
+      else if (core > 0.5 && pick < 0.75) queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y: y - 0.05, z, w: 1.2, sway: 0.035, cast: true, flip }, 0.92);
+      else grass(0.5, 0.95);
+    } else if (niche === 'wall') {
+      if (core > 0.55 && pick < 0.35 && isFree(x, z, 0.7)) {
+        queue(plantBatch, { rect: `bush.${Math.floor(rnd() * 5)}`, x, y: y - 0.1, z, w: 1.3 + core * 0.5, sway: 0.02, cast: true, flip, reveal: true }, 0.92);
+        ctx.occupied.push([x, z, 0.5]);
+      } else if (core > 0.3 && pick < 0.6) queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y: y - 0.05, z, w: 1.1 + core * 0.4, sway: 0.035, cast: true, flip }, 0.9);
+      else if (pick < 0.75 && t.shade) queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.5 }, 0.85);
+      else grass(0.5, 0.9);
+    } else if (niche === 'forest') {
+      if (core > 0.6 && pick < 0.3 && isFree(x, z, 0.7)) {
+        queue(plantBatch, { rect: `bush.${Math.floor(rnd() * 5)}`, x, y: y - 0.1, z, w: 1.4 + core * 0.5, sway: 0.02, cast: true, flip, reveal: true }, 0.9);
+        ctx.occupied.push([x, z, 0.5]);
+      } else if (core > 0.25 && pick < 0.6) queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y: y - 0.05, z, w: 1.2 + core * 0.4, sway: 0.035, cast: true, flip }, 0.9);
+      else if (pick < 0.7 && t.shade) queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.5 }, 0.85);
+      else grass(0.55, 0.9);
+    } else if (niche === 'meadow') {
+      // flowers drift through the middle band of a clump, one colour per clump
+      if (core > 0.3 && core < 0.85 && pick < 0.32) queue(flatBatch, { rect: `flowers.${(Math.floor(x * 0.37 + z * 0.23) & 1) && rnd() < 0.8 ? 1 : 0}`, x, y, z, w: 0.55 + rnd() * 0.15 }, 1);
+      else if (core > 0.7 && pick < 0.3) queue(plantBatch, { rect: `bushDry.${Math.floor(rnd() * 2)}`, x, y: y - 0.1, z, w: 1.2, sway: 0.02, cast: true }, 1);
+      else grass(0.55 + core * 0.25, 1);
+    } else if (niche === 'stone') {
+      grass(0.42, 0.95);
+    } else if (niche === 'shrine') {
+      if (pick < 0.4) queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.5 }, 0.9);
+      else queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 3)}`, x, y, z, w: 0.5, sway: 0.01 }, 0.75);
+    }
+  }
 }

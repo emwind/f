@@ -124,7 +124,11 @@ function finish(ctx, { outline = [26, 20, 18], inner = true, alphaCut = 110 } = 
 }
 
 // ------------------------------------------------------------ the hero
-// A young wanderer: sandy hair, indigo tunic, rust scarf, short sword.
+// A young wanderer: a mop of chestnut hair with a short tied tail, indigo
+// tunic over undyed sleeves and trousers, one rust scarf as the accent, worn
+// boots, short sword. The head sits on a scarf collar so head and body read
+// apart; the hair is a pile of separate locks, never a cap. Hair tail and
+// scarf take a sway/wind value per frame for secondary motion.
 const HW = 72, HH = 108;
 
 function heroFrame(dir, pose) {
@@ -136,7 +140,12 @@ function heroFrame(dir, pose) {
   const lift = pose.lift || [0, 0];
   const swing = pose.swing || 0;
   const stride = pose.stride || 0;
+  const lean = pose.lean || 0; // upper body shift (side view: forward +)
+  const sway = pose.sway || 0; // hair tail / scarf secondary motion
+  const wind = pose.wind || 0; // how far the scarf tail streams
   const sword = pose.sword; // null | {ang, len, behind}
+  const ux = side ? lean : 0; // upper-body x offset
+  const uy = b + (side ? Math.abs(lean) * 0.3 : 0);
 
   const drawSword = () => {
     if (!sword) return;
@@ -144,114 +153,171 @@ function heroFrame(dir, pose) {
     ctx.translate(sword.x, sword.y);
     ctx.rotate(sword.ang);
     shade(ctx, rrect(-2, -3, 6, 6, 1), R.leather, [1, 2, 3], 1);
-    shade(ctx, rrect(3, -5, 4, 10, 1), R.gold, [2, 3, 5], 1);
+    shade(ctx, rrect(3, -5, 4, 10, 1), R.gold, [1, 3, 4], 1);
     shade(ctx, poly([[7, -2.5], [7 + sword.len, -1.5], [10 + sword.len, 0], [7 + sword.len, 1.5], [7, 2.5]]), R.steel, [2, 4, 5], 1.2);
     ctx.restore();
   };
   if (sword && sword.behind) drawSword();
 
-  // scarf tail streams behind
-  if (!back) {
-    const tx = side ? cx - 12 - stride * 0.3 : cx + 10;
-    shade(ctx, poly([[cx - 2, 38 + b], [tx - 6, 50 + b + swing * 0.3], [tx - 9, 58 + b], [tx - 1, 49 + b], [cx + 4, 41 + b]]), R.rust, [1, 3, 4], 1.5);
+  // scarf tail: streams behind, longer and higher with wind
+  {
+    const sx = side ? cx - 6 + ux : back ? cx + 4 : cx + 7;
+    const dirx = side ? -1 : back ? 0.35 : 1;
+    const len = 12 + wind * 6;
+    const lift2 = wind * 4;
+    const ex = sx + dirx * len, ey = 52 + uy - lift2 + sway * 1.5;
+    if (!back || wind > 0.5) {
+      shade(ctx, poly([[sx, 37 + uy], [sx + dirx * len * 0.5, 44 + uy - lift2 * 0.5 + sway], [ex, ey], [ex + dirx * 2, ey + 6], [sx + dirx * len * 0.4, 50 + uy - lift2 * 0.4 + sway], [sx - dirx * 2, 42 + uy]]), R.rust, [1, 2, 4], 1.4);
+    }
   }
 
-  // legs
+  // legs: undyed trousers into worn boots
   const legs = side
-    ? [[cx - 3 + stride, lift[0]], [cx + 1 - stride, lift[1]]]
-    : [[cx - 7, lift[0]], [cx + 2, lift[1]]];
+    ? [[cx - 4 + stride, lift[0]], [cx - 1 - stride, lift[1]]]
+    : [[cx - 7.5, lift[0]], [cx + 0.5, lift[1]]];
   legs.forEach(([lx, ly], k) => {
-    const top = 70 + b, bot = gy - 10 - ly;
-    shade(ctx, rrect(lx, top, 8, bot - top + 2, 3), R.cream, k ? [1, 2, 3] : [2, 3, 4], 1.5);
-    shade(ctx, rrect(lx - (side ? 0 : 0.5), bot - 1, side ? 11 : 9, 11, [3, 4, 2, 2]), R.leather, [1, 2, 3], 1.5);
+    const top = 72 + b, bot = gy - 11 - ly;
+    shade(ctx, rrect(lx, top, 7.5, bot - top + 3, 3), R.cream, k ? [0, 1, 2] : [1, 2, 3], 1.4);
+    shade(ctx, rrect(lx - 0.5, bot - 1, side ? 11 : 8.5, 12, [3, side ? 5 : 3, 2, 2]), R.leather, [0, 1, 3], 1.4);
+    // boot cuff
+    flat(ctx, rrect(lx - 0.5, bot - 1, side ? 9 : 8.5, 2, 1), R.leather[3]);
   });
 
-  // back arm (side view) behind the body
+  // back arm (side view)
   if (side) {
-    shade(ctx, rrect(cx - 4 - swing, 44 + b, 7, 22, 3), R.cloth, [0, 1, 2], 1.5);
-    flat(ctx, ell(cx - 0.5 - swing, 66 + b, 3.5, 3.5), R.skin[2]);
+    shade(ctx, rrect(cx - 5 - swing + ux, 44 + uy, 6.5, 12, 3), R.cloth, [0, 1, 2], 1.2);
+    shade(ctx, rrect(cx - 5 - swing * 1.3 + ux, 54 + uy, 6, 10, 3), R.cream, [0, 1, 2], 1.2);
+    flat(ctx, ell(cx - 2 - swing * 1.4 + ux, 65 + uy, 3.2, 3.2), R.skin[2]);
   }
 
-  // tunic / torso with a flared hem
-  const tw = side ? 10 : 13;
+  // tunic: narrow shoulders, flared asymmetric hem, side slit
+  const tw = side ? 9 : 11;
+  const hemBack = side ? -3 : 0;
   shade(
     ctx,
-    poly([[cx - tw, 40 + b], [cx + tw, 40 + b], [cx + tw + 3, 74 + b], [cx + 2, 77 + b], [cx - tw - 3, 74 + b]]),
+    poly([[cx - tw + ux, 41 + uy], [cx + tw + ux, 41 + uy], [cx + tw + 3 + ux * 0.5, 76 + b], [cx + 4, 79 + b], [cx - 2, 76.5 + b], [cx - tw - 3 + hemBack + ux * 0.5, 77 + b]]),
     R.cloth,
-    [1, 3, 4],
-    2.5
+    back ? [1, 2, 3] : [1, 3, 4],
+    2.4
   );
-  // tunic trim and belt
+  // hem trim and the slit
   ctx.fillStyle = rgbStr(R.cloth[0]);
-  ctx.fillRect(cx - tw - 2, 71 + b, tw * 2 + 5, 2);
-  shade(ctx, rrect(cx - tw - 1, 58 + b, tw * 2 + 2, 5, 1), R.leather, [1, 3, 4], 1);
-  flat(ctx, rrect(cx - 2 + (side ? 4 : 0), 58.5 + b, 4, 4, 1), R.gold[4]);
-  if (!back && !side) {
-    // tunic centre fold
-    ctx.fillStyle = rgbStr(R.cloth[1]);
-    ctx.fillRect(cx + 2, 44 + b, 1.5, 13);
-  }
+  if (!side) ctx.fillRect(cx - 1, 66 + b, 1.5, 11);
+  // belt with a pouch on the hip
+  shade(ctx, rrect(cx - tw - 1 + ux, 59 + uy, tw * 2 + 2, 4.5, 1), R.leather, [1, 2, 4], 1);
+  if (!back) flat(ctx, rrect(cx - 1.5 + (side ? 5 : 0) + ux, 59.5 + uy, 3.5, 3.5, 1), R.gold[3]);
+  shade(ctx, rrect(side ? cx - 9 + ux : cx + tw - 4, 61 + uy, 6, 7, 2), R.leather, [0, 2, 3], 1);
 
-  // arms (front)
+  // arms: indigo upper arm, undyed rolled sleeve, hand
   if (!side) {
     for (const k of [-1, 1]) {
-      const ax = cx + k * (tw + 2) - 3.5;
+      const ax = cx + k * (tw + 1.5) - 3.2;
       const sy = k * swing;
-      shade(ctx, rrect(ax, 42 + b + Math.min(0, sy), 7, 22 + Math.abs(sy) * 0.2, 3), R.cloth, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.5);
-      flat(ctx, ell(ax + 3.5, 65 + b + sy * 0.6, 3.6, 3.6), R.skin[k < 0 ? 3 : 2]);
+      shade(ctx, rrect(ax, 42 + b + Math.min(0, sy) * 0.5, 6.5, 13, 3), R.cloth, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.3);
+      shade(ctx, rrect(ax + k * 0.5, 53 + b + sy * 0.4, 6, 10, 3), R.cream, k < 0 ? [1, 3, 4] : [1, 2, 3], 1.3);
+      flat(ctx, ell(ax + 3.2 + k * 0.5, 64.5 + b + sy * 0.6, 3.3, 3.3), R.skin[k < 0 ? 3 : 2]);
     }
   } else {
-    shade(ctx, rrect(cx - 3 + swing, 43 + b, 7, 22, 3), R.cloth, [1, 3, 4], 1.5);
-    flat(ctx, ell(cx + 0.5 + swing, 65 + b, 3.6, 3.6), R.skin[3]);
+    shade(ctx, rrect(cx - 3 + swing + ux, 43 + uy, 6.5, 12, 3), R.cloth, [1, 3, 4], 1.3);
+    shade(ctx, rrect(cx - 3 + swing * 1.3 + ux, 53 + uy, 6, 10, 3), R.cream, [1, 3, 4], 1.3);
+    flat(ctx, ell(cx + swing * 1.4 + ux, 64.5 + uy, 3.4, 3.4), R.skin[3]);
   }
 
-  // scarf wrap
-  shade(ctx, rrect(cx - 11, 34 + b, 22, 9, 4), R.rust, [2, 3, 5], 1.5);
+  // scarf collar: the break between head and body
+  shade(ctx, rrect(cx - 9.5 + ux, 35 + uy, 19, 8, 4), R.rust, [1, 3, 5], 1.4);
+  if (!back) flat(ctx, poly([[cx + 1 + ux, 41 + uy], [cx + 5 + ux, 41 + uy], [cx + 4 + ux, 46 + uy]]), R.rust[2]);
 
   // head
-  const hx = cx + (side ? 2 : 0), hy = 22 + b;
+  const hx = cx + ux + (side ? 2 : 0), hy = 24 + uy;
+  const H = R.chestnut;
+  // tied tail: a short brush behind the head that swings
+  const tail = () => {
+    const tx = side ? hx - 11 : hx + (back ? 0 : 0), ty = side ? hy - 3 : hy - 2;
+    const a = (side ? Math.PI * 0.72 : Math.PI * 0.5) + sway * 0.16 + (side ? wind * 0.12 : 0);
+    const L2 = 8.5 + wind * 1.5;
+    const ex = tx + Math.cos(a) * L2, ey = ty + Math.sin(a) * L2;
+    const px = -Math.sin(a), py = Math.cos(a);
+    shade(ctx, poly([[tx + px * 3, ty + py * 3], [ex + px * 2.5, ey + py * 2.5], [ex + Math.cos(a) * 3, ey + Math.sin(a) * 3], [ex - px * 2.5, ey - py * 2.5], [tx - px * 3, ty - py * 3]]), H, [1, 2, 4], 1.2);
+    flat(ctx, ell(tx, ty, 2.2, 2.2), R.leather[2]);
+  };
+  if (side || !back) tail();
+
+  // hair underlayer behind the face (gives the head depth)
   if (!back) {
-    shade(ctx, ell(hx, hy, side ? 12 : 13, 13.5), R.skin, [2, 3, 4], 2.5);
-    if (side) flat(ctx, poly([[hx + 10, hy - 1], [hx + 14, hy + 3], [hx + 10, hy + 4]]), R.skin[3]);
-  } else {
-    shade(ctx, ell(hx, hy, 13, 13.5), R.hair, [1, 3, 4], 2.5);
+    const ul = side
+      ? [[hx - 12, hy + 10], [hx - 13, hy - 4], [hx - 5, hy - 13], [hx + 6, hy - 12], [hx + 4, hy + 2], [hx - 4, hy + 12]]
+      : [[hx - 13, hy + 10], [hx - 14, hy - 5], [hx, hy - 14], [hx + 14, hy - 5], [hx + 13, hy + 10], [hx + 9, hy + 6], [hx - 9, hy + 6]];
+    flat(ctx, poly(ul), H[1]);
+    // face
+    shade(ctx, ell(hx + (side ? 1 : 0), hy + 1, side ? 10 : 11, 11.5), R.skin, [2, 3, 4], 2.2);
+    if (side) flat(ctx, poly([[hx + 9, hy + 1], [hx + 13, hy + 4], [hx + 9.5, hy + 5]]), R.skin[3]);
+    // ear
+    if (side) shade(ctx, ell(hx - 2, hy + 2, 2.4, 3), R.skin, [2, 3, 4], 0.8);
   }
-  // hair: swept, spiky fringe
-  const hairPts = back
-    ? [[hx - 14, hy + 2], [hx - 12, hy - 12], [hx - 2, hy - 17], [hx + 9, hy - 15], [hx + 14, hy - 4], [hx + 13, hy + 8], [hx + 5, hy + 12], [hx - 6, hy + 13], [hx - 13, hy + 9]]
-    : side
-      ? [[hx - 13, hy + 7], [hx - 14, hy - 6], [hx - 6, hy - 16], [hx + 6, hy - 15], [hx + 13, hy - 6], [hx + 9, hy - 5], [hx + 6, hy - 1], [hx + 1, hy - 4], [hx - 3, hy + 2], [hx - 8, hy + 1], [hx - 9, hy + 9]]
-      : [[hx - 14, hy + 4], [hx - 14, hy - 8], [hx - 6, hy - 16], [hx + 6, hy - 16], [hx + 14, hy - 8], [hx + 14, hy + 4], [hx + 10, hy - 3], [hx + 7, hy + 1], [hx + 4, hy - 5], [hx, hy - 1], [hx - 4, hy - 5], [hx - 7, hy + 1], [hx - 10, hy - 3]];
-  shade(ctx, poly(hairPts), R.hair, [2, 3, 5], 2.5);
-  // headband: a strip of indigo with a gold knot
-  if (!back) {
-    ctx.fillStyle = rgbStr(R.indigo[2]);
-    if (side) ctx.fillRect(hx - 12, hy - 7, 22, 2.5);
-    else ctx.fillRect(hx - 13, hy - 7, 26, 2.5);
+
+  // hair: a crown of separate locks with a ragged fringe
+  const locks = [];
+  if (back) {
+    // seen from behind: whole head is hair, ending in hanging locks at the nape
+    const pts = [];
+    for (let k = 0; k <= 10; k++) {
+      const a = Math.PI * (1 + k / 10);
+      const r = 14 + (k % 2 ? 1.6 : -0.4) + (k === 6 ? 2.5 : 0);
+      pts.push([hx + Math.cos(a) * r, hy - 2 + Math.sin(a) * r * 0.95]);
+    }
+    const nape = [[hx + 14, hy + 2], [hx + 12, hy + 11], [hx + 8, hy + 8], [hx + 5, hy + 13], [hx + 1, hy + 9], [hx - 3, hy + 13], [hx - 7, hy + 8], [hx - 11, hy + 12], [hx - 14, hy + 3]];
+    locks.push([...pts, ...nape]);
+  } else if (side) {
+    // facing right: fringe over the brow, crown sweeping back to a ragged nape
+    locks.push([
+      [hx + 11, hy - 2], [hx + 8, hy - 1], [hx + 8.5, hy + 2], [hx + 5, hy - 2], [hx + 3, hy + 1], [hx + 1, hy - 3],
+      [hx - 1, hy + 4], [hx - 4, hy + 2], [hx - 6, hy + 9], [hx - 9, hy + 6], [hx - 12, hy + 11], [hx - 14, hy + 4],
+      [hx - 15, hy - 5], [hx - 10, hy - 13], [hx - 3, hy - 16], [hx + 1, hy - 18.5], [hx + 3, hy - 15], [hx + 9, hy - 13], [hx + 13, hy - 7],
+    ]);
   } else {
-    ctx.fillStyle = rgbStr(R.indigo[2]);
-    ctx.fillRect(hx - 13, hy - 7, 26, 2.5);
-    shade(ctx, poly([[hx - 1, hy - 6], [hx - 4, hy + 6], [hx + 1, hy + 5], [hx + 3, hy - 5]]), R.indigo, [1, 2, 3], 1);
+    // facing the camera: parted fringe, locks falling to the brow and over the ears
+    locks.push([
+      [hx - 13.5, hy + 9], [hx - 14.5, hy - 3], [hx - 12, hy - 11], [hx - 6, hy - 15.5], [hx - 1, hy - 14], [hx + 2, hy - 17.5],
+      [hx + 5, hy - 14.5], [hx + 11, hy - 12], [hx + 14.5, hy - 4], [hx + 13.5, hy + 9],
+      [hx + 11, hy + 3], [hx + 10, hy - 1], [hx + 7, hy + 1], [hx + 6, hy - 4], [hx + 3, hy - 0.5], [hx + 1, hy - 6],
+      [hx - 2, hy - 1], [hx - 4, hy - 5], [hx - 7, hy + 1.5], [hx - 9, hy - 2], [hx - 11, hy + 3],
+    ]);
   }
+  for (const l of locks) shade(ctx, poly(l), H, [1, 3, 5], 2.2);
+  // a few dark strand lines break the mass into locks
+  const strand = (x0, y0, x1, y1) => flat(ctx, poly([[x0, y0], [x0 + 1.3, y0], [x1 + 0.6, y1], [x1, y1]]), H[1]);
+  if (back) { strand(hx - 5, hy - 8, hx - 7, hy + 5); strand(hx + 1, hy - 10, hx, hy + 3); strand(hx + 6, hy - 7, hx + 8, hy + 4); }
+  else if (side) { strand(hx - 2, hy - 13, hx - 7, hy - 4); strand(hx + 3, hy - 12, hx - 1, hy - 5); }
+  else { strand(hx - 3, hy - 13, hx - 7, hy - 5); strand(hx + 4, hy - 13, hx + 7, hy - 6); }
+  if (back) tail();
+
   // face
   if (!back) {
+    const shut = pose.wince;
     ctx.fillStyle = rgbStr(R.ink[0]);
     if (side) {
-      ctx.fillRect(hx + 5, hy + 1, 2.2, 4);
+      if (shut) ctx.fillRect(hx + 4.5, hy + 3, 3, 1.4);
+      else { ctx.fillRect(hx + 5, hy + 1.5, 2.2, 4); ctx.fillStyle = rgbStr(R.cream[5]); ctx.fillRect(hx + 5.6, hy + 2, 0.9, 0.9); }
     } else {
-      ctx.fillRect(hx - 6, hy + 1, 2.2, 4.2);
-      ctx.fillRect(hx + 4, hy + 1, 2.2, 4.2);
+      if (shut) { ctx.fillRect(hx - 6.5, hy + 3, 3, 1.4); ctx.fillRect(hx + 3.5, hy + 3, 3, 1.4); }
+      else {
+        ctx.fillRect(hx - 6, hy + 1.5, 2.2, 4.2);
+        ctx.fillRect(hx + 4, hy + 1.5, 2.2, 4.2);
+        ctx.fillStyle = rgbStr(R.cream[5]);
+        ctx.fillRect(hx - 5.6, hy + 2, 0.9, 0.9);
+        ctx.fillRect(hx + 4.4, hy + 2, 0.9, 0.9);
+      }
       ctx.fillStyle = rgbStr(R.skin[1]);
-      ctx.fillRect(hx - 1, hy + 8, 3, 1);
+      ctx.fillRect(hx - 1, hy + 8.5, 3, 1);
     }
   }
-  // sword hilt on the back when sheathed
+  // sword hilt over the shoulder when sheathed
   if (!sword) {
-    if (back) shade(ctx, poly([[cx + 6, 38 + b], [cx + 12, 30 + b], [cx + 14, 32 + b], [cx + 8, 40 + b]]), R.leather, [1, 2, 3], 1);
-    else if (side) flat(ctx, rrect(cx - 13, 33 + b, 3, 8, 1), R.gold[3]);
+    if (back) shade(ctx, poly([[cx + 5, 40 + b], [cx + 11, 31 + b], [cx + 13.5, 33 + b], [cx + 7.5, 42 + b]]), R.leather, [1, 2, 3], 1);
+    else if (side) flat(ctx, rrect(cx - 12 + ux, 33 + uy, 3, 8, 1), R.gold[2]);
   }
   if (sword && !sword.behind) drawSword();
-  return finish(ctx);
+  return finish(ctx, { outline: [30, 22, 20] });
 }
 
 function heroFrames() {
@@ -261,24 +327,42 @@ function heroFrames() {
     const walk = [0, 1, 2, 3].map((f) => {
       const s = [1, 0, -1, 0][f];
       return heroFrame(dir, {
-        bob: f % 2 ? -1.5 : 0,
+        bob: f % 2 ? -1.5 : 0.5,
         lift: side ? [Math.max(0, s) * 3, Math.max(0, -s) * 3] : [s > 0 ? 4 : 0, s < 0 ? 4 : 0],
         swing: s * 5,
         stride: s * 5,
+        lean: side ? 1 : 0,
+        sway: [1, 0, -1, 0][(f + 1) % 4] * 1.4,
+        wind: 0.5,
       });
     });
-    const idle = [0, 1].map((f) => heroFrame(dir, { bob: f ? -1 : 0 }));
-    const jump = [heroFrame(dir, { bob: -2, lift: [6, 3], swing: -7, stride: 3 })];
-    const hurt = [heroFrame(dir, { bob: 1, swing: 6, lift: [2, 0] })];
+    const idle = [0, 1].map((f) => heroFrame(dir, { bob: f ? -1 : 0, sway: f ? 0.6 : -0.4 }));
+    // jump: rising (legs tucked, hair and scarf trailing down), falling (legs reaching, hair lifted)
+    const jump = [
+      heroFrame(dir, { bob: -2, lift: [7, 3], swing: -7, stride: 3, sway: 2, wind: 0.6 }),
+      heroFrame(dir, { bob: -1, lift: [2, 4], swing: 4, stride: -2, sway: -2.5, wind: 1 }),
+    ];
+    // dash: low and leaning hard, scarf and hair stream flat behind
+    const dash = [heroFrame(dir, { bob: 2, lift: [4, 0], swing: -6, stride: 6, lean: side ? 4 : 0, sway: side ? -1 : 1, wind: 2 })];
+    const hurt = [heroFrame(dir, { bob: 1.5, swing: 7, lift: [3, 0], lean: side ? -3 : 0, sway: 2.5, wind: 1, wince: true })];
     // attack: wind-up, strike, follow-through
     const atk = [0, 1, 2].map((f) => {
       let sword;
       if (dir === 'down') sword = [{ x: 52, y: 44, ang: -2.4, len: 22 }, { x: 46, y: 70, ang: 1.75, len: 26 }, { x: 22, y: 70, ang: 2.3, len: 24 }][f];
       if (dir === 'up') sword = [{ x: 20, y: 50, ang: -0.6, len: 22, behind: true }, { x: 38, y: 30, ang: -1.55, len: 26, behind: true }, { x: 54, y: 40, ang: -1.0, len: 24, behind: true }][f];
-      if (side) sword = [{ x: 30, y: 44, ang: -2.0, len: 22, behind: true }, { x: 46, y: 60, ang: -0.1, len: 26 }, { x: 44, y: 70, ang: 0.8, len: 24 }][f];
-      return heroFrame(dir, { sword, swing: f === 1 ? 6 : -4, stride: side ? [-3, 5, 4][f] : 0, lift: [0, f === 1 ? 2 : 0] });
+      if (side) sword = [{ x: 28, y: 44, ang: -2.0, len: 22, behind: true }, { x: 47, y: 60, ang: -0.1, len: 26 }, { x: 45, y: 70, ang: 0.8, len: 24 }][f];
+      return heroFrame(dir, {
+        sword,
+        bob: [1.5, -0.5, 0.5][f],
+        swing: f === 1 ? 6 : -4,
+        stride: side ? [-3, 5, 4][f] : 0,
+        lift: [0, f === 1 ? 2 : 0],
+        lean: side ? [-2, 3, 2][f] : 0,
+        sway: [-1.5, 2, 1][f],
+        wind: f === 1 ? 1 : 0.3,
+      });
     });
-    out[dir] = { walk, idle, jump, hurt, atk };
+    out[dir] = { walk, idle, jump, dash, hurt, atk };
   }
   return out;
 }
@@ -1031,6 +1115,24 @@ function cracks() {
   return finish(ctx, { outline: null });
 }
 
+// a ground moss patch: ragged edge that breaks into dabs, darker where it is
+// thickest so it reads as a damp cushion on stone rather than a green decal
+function mossPatch(seed, w = 96, h = 72) {
+  const ctx = frame(w, h);
+  const r = mulberry32(seed);
+  const cx = w / 2, cy = h / 2;
+  for (let i = 0; i < w * h * 0.16; i++) {
+    const a = r() * Math.PI * 2, d = Math.pow(r(), 0.65);
+    const wob = 0.75 + 0.25 * Math.sin(a * 3 + seed) + 0.12 * Math.sin(a * 7 + seed * 2);
+    const x = cx + Math.cos(a) * d * w * 0.48 * wob, y = cy + Math.sin(a) * d * h * 0.46 * wob;
+    if (d > 0.82 && r() < 0.55) continue;
+    const v = 0.55 - d * 0.35 + (r() - 0.5) * 0.35 - (y - cy) / h * 0.3;
+    const idx = Math.max(0, Math.min(R.moss.length - 1, Math.round(v * (R.moss.length - 1))));
+    flat(ctx, ell(x, y, 1.2 + r() * 2.2, 0.9 + r() * 1.4, r() * Math.PI), R.moss[idx]);
+  }
+  return finish(ctx, { outline: null });
+}
+
 // ------------------------------------------------------------ atlas packing
 export function buildAtlas() {
   const canvas = document.createElement('canvas');
@@ -1099,6 +1201,7 @@ export function buildAtlas() {
   for (let f = 0; f < 3; f++) add(`chip.${f}`, bits(R.lime, 60 + f));
   for (let f = 0; f < 3; f++) add(`glint.${f}`, glint(f));
   add('cracks', cracks());
+  for (let i = 0; i < 3; i++) add(`moss.${i}`, mossPatch(700 + i, 88 + i * 12, 66 + i * 8));
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
