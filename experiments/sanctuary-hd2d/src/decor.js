@@ -1,0 +1,487 @@
+// Dresses a map: trees (3D trunks and roots carrying painted canopies), plants
+// placed by rules about where things plausibly grow, built props, the
+// waterfall, local fire light and, in the shrine, the painted vista beyond.
+import * as THREE from '../vendor/three.module.min.js';
+import { T, WATER_DEPTH, terrainHeight } from './level.js';
+import { mulberry32, fbm2, value2, smoothstep } from './noise.js';
+import { patchWorldMaterial, worldUniforms } from './shaderPatch.js';
+import { SpriteBatch } from './billboard.js';
+import { LIGHT, spriteTint } from './light.js';
+import { R, rgbStr, bayer } from './palette.js';
+
+const TEX_SCALE = 0.25;
+const lambert = (map) => patchWorldMaterial(new THREE.MeshLambertMaterial({ map, vertexColors: true }));
+
+function shadeColors(g, fn) {
+  const p = g.attributes.position;
+  const c = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const v = fn(p.getX(i), p.getY(i), p.getZ(i), i);
+    c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = v;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  return g;
+}
+
+export function dressMap(L, ctx) {
+  const { atlas, tex, collider, scene } = ctx;
+  const group = new THREE.Group();
+  const extraSolids = [];
+  const pointLights = [];
+  LIGHT.locals.length = 0;
+  const rnd = mulberry32(L.id === 'shrine' ? 991 : 17);
+  const H = (x, z) => terrainHeight(L, x, z);
+  const mats = {
+    bark: lambert(tex.bark),
+    masonry: lambert(tex.masonry),
+    flag: lambert(tex.flag),
+    relief: lambert(tex.relief),
+  };
+
+  const canopyBatch = new SpriteBatch(atlas, 1400, { castShadow: true });
+  const plantBatch = new SpriteBatch(atlas, 2600, { castShadow: true });
+  const flatBatch = new SpriteBatch(atlas, 9000);
+  const canopies = []; // for sprite sun occlusion
+  const pending = []; // [batch, spriteDef, lightPoint, factor] — tinted once canopies are known
+  const occupied = []; // keep plants off props, creatures, spawns
+  const isFree = (x, z, r = 0.8) => occupied.every(([ox, oz, or]) => (ox - x) ** 2 + (oz - z) ** 2 > (r + or) ** 2);
+  for (const e of L.entities) occupied.push([e.x, e.z, 0.9]);
+  for (const p of L.props) if (p.x !== undefined) occupied.push([p.x, p.z, 0.8]);
+  for (const c of L.checkpoints) occupied.push([c.x, c.z, 1.2]);
+  occupied.push([L.spawn.x, L.spawn.z, 1.6]);
+
+  const queue = (batch, def, k = 1, lightY = 0.6) => pending.push([batch, def, k, lightY]);
+
+  // ------------------------------------------------------------- trees
+  for (const t of L.trees) {
+    const size = t.size === 'giant' ? 1.7 : t.size === 'big' ? 1.25 : t.size === 'small' ? 0.75 : 1;
+    const gy = H(t.x, t.z);
+    const trunkH = 2.6 * size + (t.rim ? 0.5 : 0);
+    const rBot = 0.3 * size + 0.1, rTop = 0.17 * size;
+    const tg = new THREE.CylinderGeometry(rTop, rBot, trunkH + 0.6, 9, 5, true);
+    tg.translate(0, trunkH / 2 - 0.3, 0);
+    const p = tg.attributes.position, uv = tg.attributes.uv;
+    const lean = (rnd() - 0.5) * 0.5;
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      const k = Math.max(0, y / trunkH);
+      p.setX(i, p.getX(i) + lean * k * k + Math.sin(y * 1.7 + t.x) * 0.06 * size);
+      p.setZ(i, p.getZ(i) + Math.cos(y * 1.3 + t.z) * 0.05 * size);
+      uv.setXY(i, uv.getX(i) * rBot * 6.3 * TEX_SCALE * 1.6, y * TEX_SCALE * 0.9);
+    }
+    tg.computeVertexNormals();
+    shadeColors(tg, (x, y) => 0.55 + 0.45 * smoothstep(-0.3, 1.6, y));
+    const trunk = new THREE.Mesh(tg, mats.bark);
+    trunk.position.set(t.x, gy, t.z);
+    trunk.castShadow = trunk.receiveShadow = true;
+    group.add(trunk);
+    extraSolids.push({ x0: t.x - rBot * 0.8, z0: t.z - rBot * 0.8, x1: t.x + rBot * 0.8, z1: t.z + rBot * 0.8, y0: gy - 1, y1: gy + trunkH + 4, kind: 'trunk' });
+    occupied.push([t.x, t.z, rBot + 0.4]);
+
+    // buttress roots spreading over the ground (and over ledges, where they find them)
+    const nRoots = t.size === 'giant' ? 7 : 4 + Math.floor(rnd() * 2);
+    for (let k = 0; k < nRoots; k++) {
+      const a = (k / nRoots) * Math.PI * 2 + rnd() * 0.6;
+      const len = (1.1 + rnd() * 0.9) * size;
+      const pts = [];
+      for (let s = 0; s <= 6; s++) {
+        const f = s / 6;
+        const px = t.x + Math.cos(a) * (rBot * 0.7 + len * f);
+        const pz = t.z + Math.sin(a) * (rBot * 0.7 + len * f);
+        const ground = Math.min(gy, H(px, pz));
+        pts.push(new THREE.Vector3(px, Math.max(ground + 0.05, gy + 0.55 * (1 - f) * size - f * 0.15), pz));
+      }
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const rg = new THREE.TubeGeometry(curve, 14, 0.11 * size + 0.04, 6, false);
+      // taper
+      const rp = rg.attributes.position;
+      for (let i = 0; i < rp.count; i++) {
+        const seg = Math.floor(i / 7) / 14;
+        const c = curve.getPoint(Math.min(1, seg));
+        const taper = 1 - seg * 0.75;
+        rp.setXYZ(i, c.x + (rp.getX(i) - c.x) * taper, c.y + (rp.getY(i) - c.y) * taper, c.z + (rp.getZ(i) - c.z) * taper);
+      }
+      rg.computeVertexNormals();
+      shadeColors(rg, () => 0.8);
+      const root = new THREE.Mesh(rg, mats.bark);
+      root.castShadow = root.receiveShadow = true;
+      group.add(root);
+    }
+
+    // painted canopy: clumps arranged in a lumpy dome, lit as a whole from the sun side
+    const cr = 1.9 * size;
+    const cy = gy + trunkH + cr * 0.25;
+    const own = { x: t.x + lean, y: cy, z: t.z, r: cr * 1.15 };
+    canopies.push(own);
+    const n = Math.round(7 + size * 5);
+    const variants = t.rim ? ['canopyCool.0', 'canopyCool.1', 'canopy.3', 'canopy.4'] : ['canopy.0', 'canopy.1', 'canopy.2', 'canopy.3', 'canopy.4', 'canopy.5'];
+    const clumps = [];
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
+      const dx = Math.cos(a) * d * cr, dz = Math.sin(a) * d * cr * 0.75;
+      const dy = (rnd() - 0.35) * cr * 0.7 + (1 - d) * cr * 0.35;
+      clumps.push([dx, dy, dz]);
+    }
+    clumps.sort((p1, p2) => p1[2] - p2[2]);
+    for (const [dx, dy, dz] of clumps) {
+      const w = (2.2 + rnd() * 0.9) * size * 0.85;
+      const v = variants[Math.floor(rnd() * variants.length)];
+      const r = atlas.rects[v];
+      const h = (w * r.ph) / r.pw;
+      // brighter towards the sun side and the top of the dome
+      const k = 0.78 + (dy / cr) * 0.22 + (-dx / cr) * 0.12 + (dz / cr) * 0.06 - (t.rim ? 0.22 : 0);
+      queue(canopyBatch, { rect: v, x: t.x + lean + dx, y: cy + dy - h * 0.55, z: t.z + dz, w, h, sway: 0.05, reveal: true, cast: true, flip: rnd() < 0.5, own }, k, h * 0.6);
+    }
+  }
+
+  // ------------------------------------------------------------- props
+  const columnGeo = (h, broken, seed, carved) => {
+    const r = mulberry32(seed);
+    const g = new THREE.CylinderGeometry(0.33, 0.37, h, 12, Math.max(2, Math.round(h * 2)), false);
+    g.translate(0, h / 2, 0);
+    const p = g.attributes.position, uv = g.attributes.uv, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const ang = Math.atan2(z, x);
+      // drum joints pinch slightly, the top of a broken shaft is jagged
+      const drum = Math.abs(((y / 0.62) % 1) - 0.5) > 0.46 ? 0.94 : 1;
+      let yy = y;
+      if (broken && y > h - 0.01 && n.getY(i) > -0.5) yy = h - r() * 0.35;
+      const flute = carved ? 1 + 0.035 * Math.cos(ang * 12) : 1;
+      p.setXYZ(i, x * drum * flute, yy, z * drum * flute);
+      if (Math.abs(n.getY(i)) < 0.5) uv.setXY(i, (ang / (Math.PI * 2)) * 2.2 * TEX_SCALE * 4, y * TEX_SCALE * 1.3);
+      else uv.setXY(i, x * TEX_SCALE, z * TEX_SCALE);
+    }
+    g.computeVertexNormals();
+    return shadeColors(g, (x, y) => 0.6 + 0.4 * smoothstep(0, 1.8, y));
+  };
+
+  for (const pr of L.props) {
+    if (pr.type === 'column') {
+      const gy = H(pr.x, pr.z);
+      const full = pr.h > 2.4;
+      const grp = new THREE.Group();
+      const base = new THREE.Mesh(shadeColors(new THREE.BoxGeometry(0.95, 0.28, 0.95), () => 0.7), mats.flag);
+      base.position.y = 0.14;
+      grp.add(base);
+      const shaft = new THREE.Mesh(columnGeo(pr.h, !full, Math.floor(pr.x * 31 + pr.z), pr.carved), mats.masonry);
+      shaft.position.y = 0.2;
+      grp.add(shaft);
+      let top = pr.h + 0.2;
+      if (full) {
+        const cap = new THREE.Mesh(shadeColors(new THREE.BoxGeometry(1.0, 0.32, 1.0), (x, y) => (y > 0 ? 1 : 0.7)), mats.flag);
+        cap.position.y = pr.h + 0.2 + 0.16;
+        cap.rotation.y = (rnd() - 0.5) * 0.12;
+        grp.add(cap);
+        top += 0.32;
+        // a hanging vine off some capitals
+        if (rnd() < 0.6 && L.id !== 'shrine') queue(flatBatch, { rect: `vine.${Math.floor(rnd() * 4)}`, mode: 2, x: pr.x - 0.2, y: gy + top - 0.05, z: pr.z + 0.52, angle: 0, w: 0.55, h: 1.4 + rnd(), sway: 0.03 }, 0.9, -0.6);
+      } else if (rnd() < 0.7) {
+        queue(plantBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x: pr.x, y: gy + top - 0.08, z: pr.z, w: 0.7, sway: 0.03 }, 1);
+      }
+      grp.position.set(pr.x, gy, pr.z);
+      grp.traverse((m) => {
+        if (m.isMesh) m.castShadow = m.receiveShadow = true;
+      });
+      group.add(grp);
+      extraSolids.push({ x0: pr.x - 0.45, z0: pr.z - 0.45, x1: pr.x + 0.45, z1: pr.z + 0.45, y0: gy - 0.5, y1: gy + top, kind: 'column' });
+    } else if (pr.type === 'drum') {
+      const gy = H(pr.x, pr.z);
+      const g = columnGeo(1.6, false, 5, false);
+      g.translate(0, -0.8, 0);
+      const m = new THREE.Mesh(g, mats.masonry);
+      m.rotation.z = Math.PI / 2;
+      m.rotation.y = pr.rot ?? 0.3;
+      m.position.set(pr.x, gy + 0.3, pr.z);
+      m.castShadow = m.receiveShadow = true;
+      group.add(m);
+      extraSolids.push({ x0: pr.x - 0.7, z0: pr.z - 0.4, x1: pr.x + 0.7, z1: pr.z + 0.4, y0: gy - 0.5, y1: gy + 0.65, kind: 'drum' });
+      queue(flatBatch, { rect: 'grass.1', x: pr.x + 0.5, y: gy, z: pr.z + 0.35, w: 0.8 }, 1);
+    } else if (pr.type === 'relief') {
+      const w = pr.x1 - pr.x0;
+      const g = new THREE.PlaneGeometry(w, pr.h, 1, 1);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * w) / (pr.h * 4), uv.getY(i));
+      shadeColors(g, () => 0.92);
+      const m = new THREE.Mesh(g, mats.relief);
+      m.position.set((pr.x0 + pr.x1) / 2, pr.y + pr.h / 2, pr.z + 0.16);
+      m.receiveShadow = true;
+      group.add(m);
+    } else if (pr.type === 'statue') {
+      const gy = H(pr.x, pr.z);
+      const s = pr.scale ?? 1;
+      queue(plantBatch, { rect: 'statue', x: pr.x, y: gy - 0.05, z: pr.z, w: 1.6 * s, h: 2.93 * s, cast: true }, 1, 1.5);
+      extraSolids.push({ x0: pr.x - 0.55 * s, z0: pr.z - 0.35, x1: pr.x + 0.55 * s, z1: pr.z + 0.35, y0: gy - 0.5, y1: gy + 2.6 * s, kind: 'statue' });
+    } else if (pr.type === 'stele') {
+      const gy = H(pr.x, pr.z);
+      queue(plantBatch, { rect: 'stele', x: pr.x, y: gy - 0.05, z: pr.z, w: 0.93, h: 2.0, cast: true }, 1, 1);
+      extraSolids.push({ x0: pr.x - 0.35, z0: pr.z - 0.2, x1: pr.x + 0.35, z1: pr.z + 0.2, y0: gy - 0.5, y1: gy + 1.8, kind: 'stele' });
+    } else if (pr.type === 'brazier') {
+      const gy = H(pr.x, pr.z);
+      pr.gy = gy;
+      extraSolids.push({ x0: pr.x - 0.3, z0: pr.z - 0.3, x1: pr.x + 0.3, z1: pr.z + 0.3, y0: gy - 0.5, y1: gy + 1.1, kind: 'brazier' });
+      const light = new THREE.PointLight('#ffb15e', L.id === 'shrine' ? 7 : 4.5, L.id === 'shrine' ? 9 : 6.5, 1.3);
+      light.position.set(pr.x, gy + 1.5, pr.z + 0.2);
+      group.add(light);
+      pointLights.push({ light, base: light.intensity, prop: pr });
+      const local = { x: pr.x, y: gy + 1.2, z: pr.z, r: L.id === 'shrine' ? 7.5 : 5.5, color: [1.0, 0.62, 0.3], k: L.id === 'shrine' ? 1.1 : 0.75 };
+      LIGHT.locals.push(local);
+      pr.local = local;
+    }
+  }
+
+  // ------------------------------------------------------------- plants
+  const W = L.W, D = L.D;
+  const th = (x, z) => (x < 0 || z < 0 || x >= W || z >= D ? 99 : L.H[z * W + x]);
+  const ty = (x, z) => (x < 0 || z < 0 || x >= W || z >= D ? -1 : L.TY[z * W + x]);
+  const nearTree = (x, z, r) => L.trees.some((t) => (t.x - x) ** 2 + (t.z - z) ** 2 < r * r);
+  const underSolid = (x, z, y) => collider.solids.some((s) => x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1 && s.y0 > y);
+  const shrine = L.id === 'shrine';
+
+  for (let tz = 0; tz < D; tz++) {
+    for (let tx = 0; tx < W; tx++) {
+      const i = tz * W + tx;
+      if (L.stairs.has(i)) continue;
+      const type = L.TY[i], h = L.H[i];
+      if (h >= 9.5) continue;
+      let wallBase = false, lipEdge = false, waterEdge = false;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+        const nh = th(tx + dx, tz + dz);
+        if (nh > h + 0.8 && nh < 50) wallBase = true;
+        if (Math.abs(dx) + Math.abs(dz) === 1 && nh < h - 0.8) lipEdge = true;
+        if (ty(tx + dx, tz + dz) === T.WATER && type !== T.WATER) waterEdge = true;
+      }
+      const n = fbm2(tx * 0.3, tz * 0.3, 3, 5);
+      const shade = nearTree(tx + 0.5, tz + 0.5, 3.2);
+      const tries = shrine ? 1 : 3;
+      for (let k = 0; k < tries; k++) {
+        const x = tx + 0.15 + rnd() * 0.7, z = tz + 0.15 + rnd() * 0.7;
+        if (!isFree(x, z, 0.35)) continue;
+        if (underSolid(x, z, h + 0.5)) continue;
+        const y = h;
+        const pick = rnd();
+        if (type === T.WATER) {
+          continue;
+        } else if (shrine) {
+          // the shrine stays bare: only moss and mushrooms where water seeps
+          if ((waterEdge || wallBase) && pick < 0.12) queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.55 }, 1);
+          else if (wallBase && pick < 0.2) queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 3)}`, x, y, z, w: 0.6, sway: 0.01 }, 0.8);
+        } else if (waterEdge && pick < 0.32 && k === 0) {
+          queue(plantBatch, { rect: `reeds.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.75, h: 1.5, sway: 0.07, cast: true }, 1);
+        } else if (type === T.GRASS || type === T.ROOT) {
+          if ((wallBase || shade) && pick < 0.16 && k === 0 && isFree(x, z, 0.9)) {
+            const b = Math.floor(rnd() * 5);
+            queue(plantBatch, { rect: `bush.${b}`, x, y: y - 0.1, z, w: 1.5 + rnd() * 0.5, sway: 0.02, cast: true, flip: rnd() < 0.5, reveal: true }, 0.95);
+            occupied.push([x, z, 0.6]);
+          } else if ((wallBase || shade || n < 0.4) && pick < 0.3 && k === 0) {
+            queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y: y - 0.05, z, w: 1.4 + rnd() * 0.4, sway: 0.035, cast: true, flip: rnd() < 0.5 }, 0.95);
+          } else if (n > 0.6 && pick < 0.12 && k === 0 && !shade) {
+            queue(plantBatch, { rect: `bushDry.${Math.floor(rnd() * 2)}`, x, y: y - 0.1, z, w: 1.3, sway: 0.02, cast: true }, 1);
+          } else if (pick < 0.08 + 0.6 * smoothstep(0.45, 0.7, fbm2(tx * 0.17, tz * 0.17, 3, 9)) + (wallBase || shade ? 0.3 : 0)) {
+            // tufts gather in drifts and against walls; open ground shows its paint
+            const g = Math.floor(rnd() * 6);
+            queue(flatBatch, { rect: `grass.${g}`, x, y: y - 0.02, z, w: 0.6 + rnd() * 0.35, sway: 0.03, flip: rnd() < 0.5 }, 1);
+          } else if (pick < 0.7 && !shade && n > 0.55) {
+            queue(flatBatch, { rect: `flowers.${rnd() < 0.75 ? 0 : 1}`, x, y, z, w: 0.6 }, 1);
+          } else if (shade && pick < 0.76) {
+            queue(flatBatch, { rect: `mush.${Math.floor(rnd() * 2)}`, x, y, z, w: 0.55 }, 0.9);
+          }
+        } else if (type === T.DIRT) {
+          if (pick < 0.12) queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x, y, z, w: 0.55, sway: 0.03 }, 1);
+        } else if (type === T.FLAG) {
+          if (wallBase && pick < 0.16 && k === 0) queue(plantBatch, { rect: `fern.${Math.floor(rnd() * 4)}`, x, y, z, w: 1.2, sway: 0.03, cast: true }, 0.95);
+          else if (pick < (wallBase ? 0.25 : 0.06)) queue(flatBatch, { rect: `grass.${Math.floor(rnd() * 6)}`, x, y, z, w: 0.5, sway: 0.02 }, 1);
+        } else if (type === T.ROCK) {
+          if (pick < 0.08) queue(flatBatch, { rect: `grass.${2 + Math.floor(rnd() * 3)}`, x, y, z, w: 0.5 }, 1);
+        }
+      }
+
+      // --- what hangs from edges: grass lips, vines, ivy
+      for (const [dx, dz, ang] of [[0, 1, 0], [1, 0, Math.PI / 2], [-1, 0, -Math.PI / 2]]) {
+        const nh = th(tx + dx, tz + dz);
+        const drop = h - nh;
+        if (drop < 0.8 || nh > 50 || type === T.WATER) continue;
+        const ex = tx + 0.5 + dx * 0.5, ez = tz + 0.5 + dz * 0.5;
+        const nx = dx * 0.06, nz = dz * 0.06;
+        const mas = L.MAS[i];
+        const natural = !mas && (type === T.GRASS || type === T.DIRT || type === T.ROOT);
+        if (!shrine && (natural || (mas && rnd() < 0.35 && type !== T.FLAG) || (type === T.ROCK && rnd() < 0.4))) {
+          queue(flatBatch, { rect: `lip.${Math.floor(rnd() * 4)}`, mode: 2, x: ex + nx * 2, y: h + 0.06, z: ez + nz * 2, angle: ang, w: 1.18, h: 0.42 + rnd() * 0.18, sway: 0.01 }, 0.95, -0.2);
+        }
+        if (!shrine && drop >= 1.8 && rnd() < (mas ? 0.28 : 0.4)) {
+          const vh = Math.min(drop - 0.2, 1.2 + rnd() * 2.2);
+          const off = (rnd() - 0.5) * 0.6;
+          queue(flatBatch, { rect: `vine.${Math.floor(rnd() * 4)}`, mode: 2, x: ex + nx * 3 + (dz ? off : 0), y: h + 0.02, z: ez + nz * 3 + (dx ? off : 0), angle: ang, w: 0.62, h: vh, sway: 0.03 }, 0.85, -vh * 0.5);
+        }
+        if (mas && drop >= 1.4 && rnd() < (shrine ? 0.1 : 0.22)) {
+          const ih = 0.9 + rnd() * 0.5;
+          const iy = nh + ih + rnd() * Math.max(0, drop - ih - 0.4) * 0.4;
+          queue(flatBatch, { rect: `ivy.${Math.floor(rnd() * 3)}`, mode: 2, x: ex + nx * 2.5, y: iy, z: ez + nz * 2.5, angle: ang, w: 1.3, h: ih, sway: 0 }, shrine ? 0.6 : 0.85, -ih * 0.5);
+        }
+      }
+    }
+  }
+
+  // ------------------------------------------------------------- tint everything
+  const tmp = [0, 0, 0, 1];
+  const sun = LIGHT.sunDir;
+  for (const [batch, def, k, ly] of pending) {
+    const lx = def.x, lz = def.z, lyy = def.y + Math.max(0.2, ly);
+    // a canopy clump is never shadowed by its own crown, only by neighbours
+    const lit = shrine ? 0.25 : collider.sunlit(lx, lyy, lz, sun, def.own ? canopies.filter((c) => c !== def.own) : canopies);
+    spriteTint(lx, lyy, lz, lit, tmp);
+    def.tint = [tmp[0] * k, tmp[1] * k, tmp[2] * k, 1];
+    def.lit = lit;
+    def.k = k;
+    def.ly = ly;
+    batch.add(def);
+  }
+  for (const b of [canopyBatch, plantBatch, flatBatch]) {
+    b.commit();
+    group.add(b.mesh);
+  }
+  canopyBatch.mesh.name = 'canopies';
+
+  // ------------------------------------------------------------- waterfall
+  for (const wf of L.waterfalls) group.add(buildWaterfall(wf));
+
+  // ------------------------------------------------------------- shrine vista
+  if (L.backdrop) group.add(buildBackdrop(L.backdrop));
+
+  return { group, extraSolids, pointLights, canopyBatch, plantBatch, flatBatch, canopies, pending };
+}
+
+function streakTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext('2d');
+  const r = mulberry32(5);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 70; i++) {
+    const x = Math.floor(r() * 64), y = Math.floor(r() * 256), len = 20 + r() * 70;
+    const v = 120 + Math.floor(r() * 135);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(x, y, 1 + Math.floor(r() * 2), len);
+    g.fillRect(x, y - 256, 1 + Math.floor(r() * 2), len);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter;
+  return t;
+}
+
+function buildWaterfall(wf) {
+  const w = wf.x1 - wf.x0, h = wf.y1 - wf.y0;
+  const g = new THREE.PlaneGeometry(w, h, 6, 12);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i);
+    // bulge out a little as it falls
+    p.setZ(i, (1 - (y + h / 2) / h) * 0.35 + Math.sin(p.getX(i) * 3) * 0.04);
+  }
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { ...worldUniforms, uStreak: { value: streakTexture() } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv; varying vec3 vWPos2;
+      void main() { vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); vWPos2 = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uStreak; uniform float uTime;
+      varying vec2 vUv; varying vec3 vWPos2;
+      void main() {
+        float s1 = texture2D(uStreak, vec2(vUv.x * 2.0, vUv.y * 1.5 + uTime * 0.9)).r;
+        float s2 = texture2D(uStreak, vec2(vUv.x * 1.3 + 0.3, vUv.y * 1.1 + uTime * 1.3)).r;
+        float s = max(s1, s2 * 0.8);
+        vec3 deep = vec3(0.12, 0.2, 0.24);
+        vec3 lite = vec3(0.72, 0.78, 0.74);
+        float edge = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);
+        float foam = smoothstep(0.12, 0.0, vUv.y);
+        vec3 c = mix(deep, lite, clamp(s * 0.9 + foam, 0.0, 1.0));
+        float a = (0.45 + s * 0.45 + foam * 0.4) * edge;
+        // darker as it falls into the gorge
+        c *= mix(0.55, 1.0, vUv.y);
+        gl_FragColor = vec4(c, a);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const m = new THREE.Mesh(g, mat);
+  m.position.set((wf.x0 + wf.x1) / 2, (wf.y0 + wf.y1) / 2, wf.z + 0.08);
+  m.renderOrder = 3;
+  return m;
+}
+
+// Far backdrop for open maps: warm sky, sun glow and layered ridge
+// silhouettes with a distant tower, painted with the same ramps and dither
+// as everything else. It sits far behind the playfield, facing the camera.
+function buildBackdrop(v) {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 512;
+  const g = c.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, 512);
+  sky.addColorStop(0, '#a9b3a6');
+  sky.addColorStop(0.5, '#d8cda4');
+  sky.addColorStop(1, '#e6d5a6');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, 1024, 512);
+  const glow = g.createRadialGradient(610, 300, 10, 610, 300, 300);
+  glow.addColorStop(0, 'rgba(255,240,200,0.9)');
+  glow.addColorStop(1, 'rgba(255,240,200,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 1024, 512);
+  const ridge = (y0, amp, col, seed, freq = 0.006) => {
+    g.fillStyle = col;
+    g.beginPath();
+    g.moveTo(0, 512);
+    for (let x = 0; x <= 1024; x += 4) g.lineTo(x, y0 - fbm2(x * freq, seed, 4, seed) * amp);
+    g.lineTo(1024, 512);
+    g.fill();
+  };
+  ridge(330, 170, '#bdb894', 3);
+  // a far, slender tower on the furthest ridge
+  const tx = 300;
+  g.fillStyle = '#a8a283';
+  g.fillRect(tx - 9, 120, 18, 200);
+  g.fillRect(tx - 13, 120, 26, 6);
+  g.fillRect(tx - 6, 104, 12, 18);
+  ridge(380, 150, '#a3a27f', 4);
+  ridge(440, 120, '#878d6c', 5, 0.009);
+  ridge(500, 90, '#6b7656', 6, 0.012);
+  // dither the image onto the ramps so it matches the sprites
+  const d = g.getImageData(0, 0, 1024, 512);
+  for (let y = 0; y < 512; y++)
+    for (let x = 0; x < 1024; x++) {
+      const i = (y * 1024 + x) * 4;
+      const t = bayer(x, y) * 10;
+      for (let k = 0; k < 3; k++) d.data[i + k] = Math.round((d.data[i + k] + t) / 6) * 6;
+    }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(v.w, v.w / 2), new THREE.MeshBasicMaterial({ map: t, fog: false }));
+  m.position.set(v.x, v.y, v.z);
+  m.name = 'backdrop';
+  m.renderOrder = -1;
+  return m;
+}
+
+// recompute tints of every static sprite (debug: lighting response toggle)
+export function retint(dressing, collider, mode, shrine) {
+  const tmp = [0, 0, 0, 1];
+  const counters = new Map();
+  for (const [batch, def] of dressing.pending) {
+    const i = counters.get(batch) ?? 0;
+    counters.set(batch, i + 1);
+    if (mode === 'flat') def.tint = [1, 1, 1, def.tint[3]];
+    else {
+      const ly = def.y + Math.max(0.2, def.ly);
+      spriteTint(def.x, ly, def.z, shrine ? 0.25 : def.lit, tmp);
+      def.tint = [tmp[0] * def.k, tmp[1] * def.k, tmp[2] * def.k, def.tint[3]];
+    }
+    batch.set(i, def);
+  }
+  for (const b of counters.keys()) b.commit();
+}

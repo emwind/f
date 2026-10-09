@@ -2,7 +2,7 @@
 // collision questions the hero and creatures ask. The same data drives both,
 // so every height you see is a height you can stand on.
 import * as THREE from '../vendor/three.module.min.js';
-import { T, WATER_LEVEL, WATER_BED, terrainHeight, tileHeight } from './level.js';
+import { T, WATER_DEPTH, terrainHeight, tileHeight } from './level.js';
 import { fbm2, fbm3, smoothstep, clamp, mulberry32 } from './noise.js';
 import { patchWorldMaterial, worldUniforms } from './shaderPatch.js';
 
@@ -319,6 +319,7 @@ export function buildWorld(L, tex) {
   const masonryMat = mats.masonry;
   const flagMat = mats[T.FLAG];
   for (const s of solids) {
+    if (s.kind === 'crack' || s.kind === 'invisible') continue; // crack is drawn by its entity
     if (s.kind === 'roof') {
       group.add(buildRoof(s, flagMat, masonryMat));
       continue;
@@ -337,19 +338,27 @@ function expandSolids(list) {
   const out = [];
   for (const s of list) {
     out.push(s);
-    if (s.kind === 'bridge') {
-      // low broken parapets along both sides of each deck segment
-      const r = mulberry32(Math.floor(s.z0 * 100));
-      for (const [px0, px1] of [[s.x0, s.x0 + 0.22], [s.x1 - 0.22, s.x1]]) {
-        let z = s.z0 + (s.z0 > 20 ? 0 : 0.0);
-        const zEnd = s.z1;
-        while (z < zEnd - 0.2) {
-          const len = Math.min(0.8 + r() * 1.4, zEnd - z);
+    if (s.kind === 'bridge' && s.parapet) {
+      // low broken parapets along both sides; ragged where the deck is broken
+      const r = mulberry32(Math.floor(s.z0 * 100 + s.x0 * 7));
+      const alongX = s.axis === 'x';
+      const a0 = alongX ? s.x0 : s.z0, a1 = alongX ? s.x1 : s.z1;
+      const sides = alongX ? [[s.z0, s.z0 + 0.2], [s.z1 - 0.2, s.z1]] : [[s.x0, s.x0 + 0.22], [s.x1 - 0.22, s.x1]];
+      const endHi = alongX ? 'x1' : 'z1', endLo = alongX ? 'x0' : 'z0';
+      for (const [p0, p1] of sides) {
+        let t = a0;
+        while (t < a1 - 0.2) {
+          const len = Math.min(0.8 + r() * 1.4, a1 - t);
           const h = 0.28 + r() * 0.18;
-          // leave a ragged break near the gap
-          const nearGap = (s.z1 < 23 && z + len > s.z1 - 0.7) || (s.z0 > 23 && z < s.z0 + 0.5);
-          if (!nearGap || r() < 0.4) out.push({ x0: px0, z0: z, x1: px1, z1: z + len - 0.04, y0: s.y1, y1: s.y1 + (nearGap ? h * 0.5 : h), kind: 'parapet' });
-          z += len;
+          const nearBreak = (s.brokenEnd === endHi && t + len > a1 - 0.8) || (s.brokenEnd === endLo && t < a0 + 0.6);
+          const missing = r() < 0.12;
+          if (!missing && (!nearBreak || r() < 0.45)) {
+            const box = alongX
+              ? { x0: t, z0: p0, x1: t + len - 0.04, z1: p1 }
+              : { x0: p0, z0: t, x1: p1, z1: t + len - 0.04 };
+            out.push({ ...box, y0: s.y1, y1: s.y1 + (nearBreak ? h * 0.5 : h), kind: 'parapet' });
+          }
+          t += len;
         }
       }
     }
@@ -448,7 +457,7 @@ function buildWater(L, tex) {
           // shore factor: 1 at vertices touching dry land (foam / shallows)
           let shore = 0;
           for (const [ox, oz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (!isW(x + ox, z + oz)) shore = 1;
-          ids.push(g.v(x, WATER_LEVEL, z, x * TEX_SCALE, z * TEX_SCALE, shore));
+          ids.push(g.v(x, L.H[tz * L.W + tx] + WATER_DEPTH, z, x * TEX_SCALE, z * TEX_SCALE, shore));
         }
       g.quad(ids[0], ids[2], ids[3], ids[1]);
     }
@@ -512,6 +521,7 @@ function buildWater(L, tex) {
 export function makeCollider(L, solids) {
   const terrain = (x, z) => terrainHeight(L, x, z);
   const inside = (s, x, z) => {
+    if (s.off) return false;
     if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) return false;
     if (s.cells) return s.cells.has(`${Math.floor(x)},${Math.floor(z)}`);
     return true;
@@ -520,12 +530,12 @@ export function makeCollider(L, solids) {
   // highest surface under (x,z) that is not above y + tolerance
   function ground(x, z, y, tol = STEP) {
     let g = terrain(x, z);
-    for (const s of solids) if (inside(s, x, z) && s.y1 <= y + tol && s.y1 > g) g = s.y1;
+    for (const s of solids) if (s.kind !== 'invisible' && inside(s, x, z) && s.y1 <= y + tol && s.y1 > g) g = s.y1;
     return g;
   }
 
   function blockedPoint(x, z, y, h) {
-    if (x < 0.3 || z < 0.3 || x > L.W - 0.3 || z > L.D - 0.3) return true;
+    if (x < 0.3 || z < 0.3 || x > L.W - 0.3 || z > (L.walkMaxZ ?? L.D) - 0.3) return true;
     if (terrain(x, z) > y + STEP) return true;
     for (const s of solids) if (inside(s, x, z) && s.y1 > y + STEP && s.y0 < y + h) return true;
     return false;
@@ -569,4 +579,4 @@ export function makeCollider(L, solids) {
   return { terrain, ground, blocked, isWater, sunlit, solids };
 }
 
-export { WATER_LEVEL, WATER_BED, tileHeight };
+export { tileHeight };

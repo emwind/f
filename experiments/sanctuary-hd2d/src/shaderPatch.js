@@ -14,6 +14,9 @@ export const worldUniforms = {
   uPlayerDepth: { value: 0 },
   uTime: { value: 0 },
   uHighY: { value: 8.0 },
+  uHaze: { value: new THREE.Color('#29332f') },
+  uHazeAmt: { value: 0.25 },
+  uDeepTop: { value: 2.0 },
 };
 
 export const GLSL_COMMON = /* glsl */ `
@@ -26,6 +29,9 @@ uniform float uPlayerY;
 uniform float uPlayerDepth;
 uniform float uTime;
 uniform float uHighY;
+uniform vec3 uHaze;
+uniform float uHazeAmt;
+uniform float uDeepTop;
 varying vec3 vWPos;
 varying float vViewZ;
 float bayer4(vec2 p) {
@@ -45,12 +51,12 @@ void revealDiscard() {
   }
 }
 vec3 depthTint(vec3 c) {
-  float k = smoothstep(2.8, -0.6, vWPos.y) * uDeepAmount;
+  float k = smoothstep(uDeepTop, -0.6, vWPos.y) * uDeepAmount;
   c = mix(c, c * uDeep * 3.2, k * 0.55);
   c = mix(c, uDeep, k * 0.35);
   // the forest rim and highest ground fade slightly into cool haze
-  float hk = smoothstep(uHighY - 0.5, uHighY + 3.0, vWPos.y) * 0.25;
-  c = mix(c, vec3(0.16, 0.2, 0.2), hk);
+  float hk = smoothstep(uHighY - 0.5, uHighY + 2.0, vWPos.y) * uHazeAmt;
+  c = mix(c, uHaze, hk);
   return c;
 }
 `;
