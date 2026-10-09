@@ -190,6 +190,94 @@ painted cards; the sentinel and slime were not repainted; some open lawns now
 read a little empty; light moods follow the player rather than being lit
 volumes, so a distant area is shown in the current area's light.
 
+## Art pass 3: cohesion and art direction
+
+A final visual pass with the same rule as pass 2: depth, not breadth. No
+areas, enemies, mechanics, puzzles, bosses or rendering technology were added,
+and collision is unchanged. `node tools/reach.js` gives the same 35 reachable
+targets and the same two closed ones, and every scripted playtest passes
+(movement, sunstones, grate, vessel and secret crack, all four enemy types,
+death and respawn, the Warden fight to the open vale door, and the vale ending).
+The only logic-adjacent additions are visual timers (`landT` on the player and
+slime, `awake` on the thornbulb) and per-enemy death effects.
+
+![](docs/screenshots/pass3/00-strongest.jpg)
+
+**Wall faces** (`coursedWall` in `textures.js`, `wallMaterial` and
+`wallStateFn` in `world.js`). Wall fronts are no longer one tiled texture. Two
+coursed-stone textures (ashlar and monumental) carry an id map per stone; a
+shader picks a foundation course of big blocks at the foot of each bay, drops
+individual stones to exposed rubble with recessed shading, draws cracks across
+stones, drifts the value at large scale and adds wet darkening, runoff
+streaks, moss along the water paths and pale mineral bloom. A condition field
+per location (`L.wallWear` boxes over area defaults) decides how intact,
+damaged, collapsed or wet a wall is: soaked lower courses at the falls, a crisp
+temple front, failed facing on the aqueduct supports, a collapsed precinct
+corner, the stone ring swallowed by the forest, cold crisp stone in the shrine
+and monumental blocks in the Warden's chamber. Faces turned away from the sun
+get a per-area bounce light so they read as stone instead of black.
+
+**Enemies** (`sprites.js`, draw code in `entities.js`).
+- Slime: a lopsided lump of pond mud with a slipping moss cap, a stone in its
+  flank, a root sprig and a murky core. Squash before the hop, stretch on the
+  way up, a falling shape, a held landing compression with thrown drops, and
+  a mud-and-moss splat when it dies.
+- Thornbulb: rooted into the ground with a leaf rosette. It droops while
+  dormant, raises its bud when the player comes near, shivers, swells with the
+  seed glowing through, then fires and recoils. Two petal variants by position.
+- Sentinel: built from the sanctuary's masonry (plinth feet, drum legs and
+  arms, ashlar torso with a carved sun panel, a lintel for shoulders and the
+  head sunk between them), with cracks, lichen and moss. A four-step walk with
+  a lifted foot and a contact frame, a raise that lifts the whole stack, and a
+  slam that drops it and drives both fists into the ground with dust.
+- Moth: hooked indigo forewings with a pale margin, rust tailed hindwings, a
+  four-frame wingbeat with the body rising on the downstroke, a glide frame
+  for the swoop and banking by direction.
+- Root Warden: a fallen shrine roof of fitted slabs on a body of roots, root
+  legs under stone pauldrons, a gold-masked head below a heavy brow. Phase two
+  shows lost slabs, a cracked mask and a snapped antler; the death collapses
+  into a dedicated frame and sinks.
+
+**Hero second pass.** Launch, apex and falling jump poses, a landing crouch,
+bent knees on lifted legs, a lower and longer dash with the scarf streaming,
+a thrown-back hurt pose and a four-frame attack (anticipation, strike,
+follow-through, recovery). Same size, few frames, stronger key poses.
+
+**Authored large forms** (`L.forms` in `level.js`). Empty stretches got
+subjects instead of scatter: leaf litter drifts and root masses in the forest,
+heaved paving and fallen blocks under the aqueduct and in the sanctuary court,
+a broken statue, moss fields, fern and flower banks, and one plant found
+nowhere else, the sun lily, by the sanctuary water. All visual, no collision.
+
+**Trees.** Canopy cards are painted as a few leaf sprays with a heavy side,
+a drooping edge and sky holes instead of round balls. Roots flare from the
+trunk and dive into the soil, and every tree sits on a painted root mass.
+
+**Ground, water and light.** A broad noise lets grass and bare earth trade
+ground in drifts instead of along the tile grid. The shrine hall and the
+Warden arena lost their random dirt blotches; the arena floor is whole except
+where the Warden's roots broke through behind it. The shrine channel reflects a
+dark vault instead of the sky, and the vale basin sinks into a darker, cooler
+depth so the drowned tower reads.
+
+| Pass 1 / pass 2 / pass 3 | |
+| --- | --- |
+| ![](docs/screenshots/pass3/01-forest.jpg) Forest Approach | ![](docs/screenshots/pass3/02-forest-bridge.jpg) Arch bridge |
+| ![](docs/screenshots/pass3/03-courtyard.jpg) Ruined Courtyard | ![](docs/screenshots/pass3/04-waterfall.jpg) Sanctuary waterfall |
+| ![](docs/screenshots/pass3/05-ravine-bridge.jpg) Ravine bridge | ![](docs/screenshots/pass3/06-combat.jpg) Combat |
+| ![](docs/screenshots/pass3/07-shrine.jpg) Underground Shrine | ![](docs/screenshots/pass3/08-warden.jpg) Warden's Chamber |
+| ![](docs/screenshots/pass3/09-vale.jpg) Hidden Vale | ![](docs/screenshots/pass3/10-sanctuary-court.jpg) Sanctuary court |
+| ![](docs/screenshots/pass3/11-hero-close.jpg) Hero close-up | ![](docs/screenshots/pass3/12-enemies.jpg) Enemy frames |
+
+**Performance** (SwiftShader, 1280x720 headless): 410 to 675 draw calls and
+about 300k triangles per frame depending on area, 3.4 to 4.2 ms per render,
+18 textures. The wall shader adds texture reads on wall faces only.
+
+**Weakest view:** the forest
+(![](docs/screenshots/pass3/99-weakest.jpg)). The canopy still covers too much
+of the frame from this camera, the crowns are still assembled from six painted
+cards, and the ground reads as noise more than as paths and clearings.
+
 ## What is 2D and what is 3D
 
 **3D (real geometry, lit and shadowed):** terrain, cliffs and retaining walls,
