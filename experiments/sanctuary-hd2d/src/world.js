@@ -742,9 +742,10 @@ function buildWater(L, tex) {
     uniforms: {
       ...worldUniforms,
       uRipple: { value: tex.ripple },
-      uShallow: { value: new THREE.Color('#3f6168') },
-      uDeepW: { value: new THREE.Color('#1b2c3b') },
-      uSky: { value: new THREE.Color('#9fb3b8') },
+      // the shrine's channel reflects a dark vault, not the sky
+      uShallow: { value: new THREE.Color(L.id === 'shrine' ? '#26404a' : L.id === 'vista' ? '#4d6a66' : '#3f6168') },
+      uDeepW: { value: new THREE.Color(L.id === 'shrine' ? '#0b141c' : L.id === 'vista' ? '#22383c' : '#1b2c3b') },
+      uSky: { value: new THREE.Color(L.id === 'shrine' ? '#2c3646' : L.id === 'vista' ? '#b7bfae' : '#9fb3b8') },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     },
     vertexShader: /* glsl */ `

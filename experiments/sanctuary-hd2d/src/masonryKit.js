@@ -165,6 +165,30 @@ export function buildMasonryKit(L, mat, capMat = mat) {
       }
     }
 
+  // --- authored collapse: heaved paving and fallen blocks (L.forms)
+  const ground = (x, z) => Hh(Math.floor(x), Math.floor(z));
+  for (const f of L.forms ?? []) {
+    if (f.kind !== 'slabs' && f.kind !== 'fallen') continue;
+    const r = mulberry32(Math.floor(f.x * 131 + f.z * 977));
+    const n = f.n ?? (f.kind === 'slabs' ? 6 : 5);
+    for (let k = 0; k < n; k++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (f.r ?? 1);
+      const x = f.x + Math.cos(a) * d, z = f.z + Math.sin(a) * d * 0.8;
+      const g = ground(x, z);
+      if (g > 50) continue;
+      if (f.kind === 'slabs') {
+        // a paving slab cracked and heaved: low, tilted, its edge lifted
+        const w = 0.45 + r() * 0.45, dd = 0.35 + r() * 0.35, th = 0.07 + r() * 0.05;
+        const lift = r() < 0.4 ? 0.06 + r() * 0.06 : 0;
+        addBox(caps, x - w / 2, g - 0.04 + lift * 0.5, z - dd / 2, x + w / 2, g + th + lift, z + dd / 2, { chip: 0.05, seed: k + 7, rotY: (r() - 0.5) * 0.5, tilt: lift ? (r() < 0.5 ? 1 : -1) * (0.12 + r() * 0.14) : (r() - 0.5) * 0.05 });
+      } else {
+        // fallen coping and wall blocks, half sunk where they landed
+        const w = 0.35 + r() * 0.4, h = 0.22 + r() * 0.2;
+        addBox(rough, x - w / 2, g - 0.08, z - h * 0.6, x + w / 2, g + h, z + h * 0.6, { chip: 0.1, seed: k + 31, rotY: r() * 3, tilt: (r() - 0.5) * 0.4, col: [0.9, 0.9, 0.88] });
+      }
+    }
+  }
+
   const group = new THREE.Group();
   group.name = 'masonryKit';
   for (const [out, m] of [[rough, mat], [caps, capMat]]) {

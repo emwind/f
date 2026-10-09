@@ -481,7 +481,7 @@ function slimeFrames() {
 // ------------------------------------------------------------ foliage
 // Leaf masses are built from hundreds of small lit dabs; the lighting comes from
 // treating the mass as a lumpy sphere lit from the upper left.
-function leafMass(w, h, seed, { ramp = R.leaf, density = 1, lumps = 7, dark = 0 } = {}) {
+function leafMass(w, h, seed, { ramp = R.leaf, density = 1, lumps = 7, dark = 0, ragged = false } = {}) {
   const ctx = frame(w, h);
   const r = mulberry32(seed);
   const cx = w / 2, cy = h * 0.54;
@@ -491,6 +491,29 @@ function leafMass(w, h, seed, { ramp = R.leaf, density = 1, lumps = 7, dark = 0 
   // upper edge against the shadowed one behind it
   const lobes = [];
   const count = Math.round(lumps * 3.2);
+  if (ragged) {
+    // a crown is a few leaf sprays thrown out from the limbs, not a ball:
+    // spray centres off-axis, a heavy side, a drooping lower edge, gaps
+    const sprays = [];
+    const nS = 3 + Math.floor(r() * 2);
+    const heavy = r() < 0.5 ? -1 : 1;
+    for (let k = 0; k < nS; k++) {
+      const a = -Math.PI * 0.95 + (k / (nS - 1)) * Math.PI * 0.9 + (r() - 0.5) * 0.4;
+      const d = 0.35 + r() * 0.3;
+      sprays.push([cx + Math.cos(a) * d * w * 0.42 + heavy * w * 0.04, cy + Math.sin(a) * d * h * 0.4 + h * 0.06, 0.5 + r() * 0.5]);
+    }
+    sprays.push([cx + heavy * w * 0.08, cy + h * 0.02, 1]);
+    for (let i = 0; i < count; i++) {
+      const [sx, sy, ss] = sprays[i % sprays.length];
+      const a = r() * Math.PI * 2, d = Math.pow(r(), 0.8);
+      const rad = (0.1 + r() * 0.07) * m * (0.75 + ss * 0.4) * (1.1 - d * 0.35);
+      let x = sx + Math.cos(a) * d * m * 0.24 * (0.7 + ss * 0.5);
+      let y = sy + Math.sin(a) * d * m * 0.18 * (0.7 + ss * 0.5) + (Math.sin(a) > 0 ? d * m * 0.05 : 0);
+      x = Math.max(rad, Math.min(w - rad, x));
+      y = Math.max(rad, Math.min(h - rad * 0.9, y));
+      lobes.push([x, y, rad]);
+    }
+  } else
   for (let i = 0; i < count; i++) {
     const a = r() * Math.PI * 2, d = Math.pow(r(), 0.7);
     const rad = (0.13 + r() * 0.08) * m * (1.1 - d * 0.3);
@@ -531,7 +554,16 @@ function bush(seed, w = 110, h = 84, opts) {
 }
 
 function canopy(seed, w = 190, h = 150, opts) {
-  const ctx = leafMass(w, h, seed, { lumps: 9, density: 1.1, ...opts });
+  const ctx = leafMass(w, h, seed, { lumps: 9, density: 1.1, ragged: true, ...opts });
+  // sky holes through the thinner sprays, and loose leaves at the rim
+  const r = mulberry32(seed * 3 + 1);
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 4; i++) {
+    const a = r() * Math.PI * 2;
+    flat(ctx, ell(w / 2 + Math.cos(a) * w * 0.3, h * 0.5 + Math.sin(a) * h * 0.28, 3 + r() * 4, 2.5 + r() * 3), [0, 0, 0]);
+  }
+  ctx.restore();
   return finish(ctx, { outline: [10, 16, 13] });
 }
 
@@ -717,6 +749,117 @@ function statue() {
   for (let i = 0; i < 10; i++) flat(ctx, ell(18 + r() * 60, 140 + r() * 3, 2 + r() * 5, 1.5), M[3]);
   flat(ctx, poly([[60, 22], [66, 30], [62, 34]]), L[1]);
   return finish(ctx);
+}
+
+// A guardian statue that broke at the waist long ago: the stump of the robe
+// on its plinth, the hooded head fallen against the foot of it.
+function statueBroken() {
+  const ctx = frame(96, 176);
+  const L = R.lime, M = R.moss;
+  shade(ctx, rrect(14, 140, 68, 32, 2), L, [2, 4, 5], 2);
+  ctx.fillStyle = rgbStr(L[1]);
+  ctx.fillRect(14, 150, 68, 2);
+  flat(ctx, poly([[70, 140], [82, 140], [82, 152], [76, 146]]), L[1]);
+  // the lower robe with a jagged break
+  shade(ctx, poly([[26, 96], [34, 90], [40, 98], [47, 86], [55, 95], [61, 89], [70, 97], [74, 140], [22, 140]]), L, [2, 4, 5], 3.5);
+  ctx.fillStyle = rgbStr(L[2]);
+  for (const x of [36, 46, 56, 64]) ctx.fillRect(x, 100, 1.6, 38);
+  flat(ctx, poly([[30, 96], [34, 92], [40, 99], [47, 89], [55, 97], [61, 92], [67, 98], [60, 101], [40, 102]]), L[5]);
+  // the planted blade, snapped short
+  shade(ctx, poly([[46, 104], [50, 104], [51, 132], [48, 138], [45, 132]]), R.limeCool, [2, 4, 5], 1.5);
+  // the fallen head, face turned up, against the plinth
+  shade(ctx, poly([[56, 140], [58, 126], [68, 118], [80, 122], [86, 134], [82, 146], [64, 148]]), L, [2, 4, 6], 2.5);
+  flat(ctx, ell(71, 133, 8, 7, 0.4), L[0]);
+  flat(ctx, ell(68, 131, 1.5, 1.3), R.indigo[3]);
+  flat(ctx, ell(74, 135, 1.5, 1.3), R.indigo[3]);
+  // rubble, moss and a fern grown in the break
+  const r = mulberry32(14);
+  for (let i = 0; i < 7; i++) shade(ctx, ell(10 + r() * 30, 160 + r() * 10, 3 + r() * 3, 2 + r() * 2), L, [2, 4, 5], 1);
+  for (let i = 0; i < 34; i++) flat(ctx, ell(24 + r() * 48, 92 + r() * 46, 1.5 + r() * 3, 1 + r() * 1.5), M[2 + Math.floor(r() * 3)]);
+  for (let i = 0; i < 14; i++) flat(ctx, ell(16 + r() * 64, 139 + r() * 4, 2 + r() * 5, 1.6), M[2 + Math.floor(r() * 3)]);
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + (i - 2.5) * 0.35;
+    ctx.strokeStyle = rgbStr(R.leaf[3 + (i % 3)]);
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(48, 96);
+    ctx.quadraticCurveTo(48 + Math.cos(a) * 10, 96 + Math.sin(a) * 14, 48 + Math.cos(a) * 18, 96 + Math.sin(a) * 14 + 6);
+    ctx.stroke();
+  }
+  return finish(ctx);
+}
+
+// Leaf litter: fallen leaves in drifts, painted top-down as a ground decal.
+function leafLitter(seed, w = 120, h = 90) {
+  const ctx = frame(w, h);
+  const r = mulberry32(seed);
+  const cols = [R.bark[2], R.bark[3], R.bark[4], R.rust[2], R.rust[3], R.hair[1], R.hair[2], R.leaf[3], R.dirt[3]];
+  for (let i = 0; i < 260; i++) {
+    const a = r() * Math.PI * 2, d = Math.pow(r(), 0.7);
+    const x = w / 2 + Math.cos(a) * d * w * 0.46, y = h / 2 + Math.sin(a) * d * h * 0.44;
+    if (r() < d * 0.6) continue;
+    flat(ctx, ell(x, y, 2 + r() * 2.2, 1 + r() * 1.2, r() * Math.PI), cols[Math.floor(r() * cols.length)]);
+  }
+  return finish(ctx, { outline: null });
+}
+
+// Root mass: thick roots crawling over the ground from a trunk or out of a
+// wall, painted top-down as a ground decal with a lit upper edge.
+function rootMass(seed, w = 160, h = 110) {
+  const ctx = frame(w, h);
+  const r = mulberry32(seed);
+  ctx.lineCap = 'round';
+  const roots = [];
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + r() * 0.5;
+    const len = 0.5 + r() * 0.5;
+    roots.push([a, len, 7 + r() * 5]);
+  }
+  for (const pass of [0, 1, 2]) {
+    for (const [a, len, wd] of roots) {
+      const ex = w / 2 + Math.cos(a) * len * w * 0.48, ey = h / 2 + Math.sin(a) * len * h * 0.46;
+      const mx = (w / 2 + ex) / 2 + Math.sin(a) * 10, my = (h / 2 + ey) / 2 - Math.cos(a) * 8;
+      ctx.strokeStyle = rgbStr(pass === 0 ? R.bark[1] : pass === 1 ? R.bark[3] : R.bark[5]);
+      ctx.lineWidth = pass === 0 ? wd + 2 : pass === 1 ? wd : wd * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(w / 2 + (pass === 2 ? -wd * 0.25 : 0), h / 2 + (pass === 2 ? -wd * 0.3 : 0));
+      ctx.quadraticCurveTo(mx + (pass === 2 ? -wd * 0.25 : 0), my + (pass === 2 ? -wd * 0.3 : 0), ex, ey);
+      ctx.stroke();
+    }
+  }
+  flat(ctx, ell(w / 2, h / 2, 14, 10), R.bark[3]);
+  for (let i = 0; i < 30; i++) flat(ctx, ell(w / 2 + (r() - 0.5) * w * 0.7, h / 2 + (r() - 0.5) * h * 0.7, 2 + r() * 3, 1.5 + r() * 2), R.moss[2 + Math.floor(r() * 3)]);
+  return finish(ctx, { outline: [16, 12, 10] });
+}
+
+// The sun lily: one plant found nowhere else, tall sword leaves and pale
+// gold trumpets that lean toward the light. Planted by the sanctuary water.
+function sunLily() {
+  const ctx = frame(96, 150);
+  const r = mulberry32(21);
+  const bx = 48, by = 146;
+  for (let i = 0; i < 12; i++) {
+    const a = -Math.PI / 2 + (i - 5.5) * 0.17 + (r() - 0.5) * 0.1;
+    const len = 50 + r() * 40;
+    const ex = bx + Math.cos(a) * len, ey = by + Math.sin(a) * len;
+    const nx = -Math.sin(a) * 3.5, ny = Math.cos(a) * 3.5;
+    shade(ctx, poly([[bx - nx, by - ny], [bx + (ex - bx) * 0.5 - nx * 0.8, by + (ey - by) * 0.5 - ny * 0.8], [ex + Math.cos(a) * 4 + (i < 6 ? -4 : 4), ey + 6], [bx + (ex - bx) * 0.5 + nx * 0.8, by + (ey - by) * 0.5 + ny * 0.8], [bx + nx, by + ny]]), i % 3 ? R.leaf : R.leafCool, [2, 3, 5], 1.3);
+  }
+  for (const [sx, sy, a] of [[32, 30, -0.5], [56, 14, 0.2], [70, 42, 0.6]]) {
+    ctx.strokeStyle = rgbStr(R.leaf[3]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + (sx - bx) * 0.2, by - 30);
+    ctx.quadraticCurveTo(bx + (sx - bx) * 0.6, sy + 40, sx, sy + 8);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(a);
+    shade(ctx, poly([[-3, 10], [-9, -4], [-5, -8], [0, -3], [5, -8], [9, -4], [3, 10]]), R.gold, [2, 4, 5], 1.4);
+    flat(ctx, ell(0, -2, 2.6, 2), R.cream[5]);
+    ctx.restore();
+  }
+  return finish(ctx, { outline: [16, 22, 14] });
 }
 
 function stele() {
@@ -1533,6 +1676,10 @@ export function buildAtlas() {
   for (let i = 0; i < 3; i++) add(`ivy.${i}`, ivy(900 + i, 90 + i * 14, 70 + i * 10));
   for (let i = 0; i < 2; i++) add(`mush.${i}`, mushrooms(1000 + i));
   add('statue', statue());
+  add('statueBroken', statueBroken());
+  for (let i = 0; i < 2; i++) add(`litter.${i}`, leafLitter(1200 + i));
+  for (let i = 0; i < 2; i++) add(`roots.${i}`, rootMass(1300 + i));
+  add('sunLily', sunLily());
   add('stele', stele());
   for (let i = 0; i < 3; i++) add(`brazier.${i}`, brazier(i));
   add('pot', pot(1));

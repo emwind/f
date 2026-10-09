@@ -51,7 +51,7 @@ const THEMES = {
   // the valley floor sinking into warm haze
   vista: {
     bg: '#a9b3a6', sunAz: 160, sunEl: 30, sunColor: '#ffd9a0', sunI: 2.7, sky: '#c8ccc0', ground: '#56493a', hemiI: 1.35,
-    fillI: 0.42, deep: '#b5ac86', deepAmt: 0.5, deepTop: 0.5, highY: 30, haze: '#000000', hazeAmt: 0,
+    fillI: 0.42, deep: '#4c5c55', deepAmt: 0.42, deepTop: 0.5, highY: 30, haze: '#000000', hazeAmt: 0,
     spriteAmbient: [0.6, 0.6, 0.58], spriteSun: [0.64, 0.53, 0.38], audio: 'day', bounce: '#9a8a6c',
   },
 };

@@ -82,31 +82,36 @@ export function dressMap(L, ctx) {
     const nRoots = t.size === 'giant' ? 7 : 4 + Math.floor(rnd() * 2);
     for (let k = 0; k < nRoots; k++) {
       const a = (k / nRoots) * Math.PI * 2 + rnd() * 0.6;
-      const len = (1.1 + rnd() * 0.9) * size;
+      const len = (0.55 + rnd() * 0.6) * size;
       const pts = [];
       for (let s = 0; s <= 6; s++) {
         const f = s / 6;
         const px = t.x + Math.cos(a) * (rBot * 0.7 + len * f);
         const pz = t.z + Math.sin(a) * (rBot * 0.7 + len * f);
         const ground = Math.min(gy, H(px, pz));
-        pts.push(new THREE.Vector3(px, Math.max(ground + 0.05, gy + 0.55 * (1 - f) * size - f * 0.15), pz));
+        // flare out of the trunk and dive into the soil rather than arch over it
+        pts.push(new THREE.Vector3(px, Math.max(ground - 0.06, gy + 0.4 * Math.pow(1 - f, 1.6) * size - f * 0.12), pz));
       }
       const curve = new THREE.CatmullRomCurve3(pts);
-      const rg = new THREE.TubeGeometry(curve, 14, 0.11 * size + 0.04, 6, false);
+      const rg = new THREE.TubeGeometry(curve, 14, 0.15 * size + 0.05, 6, false);
       // taper
       const rp = rg.attributes.position;
       for (let i = 0; i < rp.count; i++) {
         const seg = Math.floor(i / 7) / 14;
         const c = curve.getPoint(Math.min(1, seg));
-        const taper = 1 - seg * 0.75;
+        const taper = Math.pow(1 - seg, 1.3) * 0.85 + 0.15;
         rp.setXYZ(i, c.x + (rp.getX(i) - c.x) * taper, c.y + (rp.getY(i) - c.y) * taper, c.z + (rp.getZ(i) - c.z) * taper);
       }
       rg.computeVertexNormals();
-      shadeColors(rg, () => 0.8);
+      shadeColors(rg, (x, y) => 0.62 + 0.3 * smoothstep(-0.1, 0.4, y));
       const root = new THREE.Mesh(rg, mats.bark);
       root.castShadow = root.receiveShadow = true;
       group.add(root);
     }
+
+    // the roots carry on over the ground as a painted mass, so the trunk
+    // grows out of the soil instead of standing on it
+    if (!t.rim) queue(flatBatch, { rect: `roots.${Math.floor(rnd() * 2)}`, mode: 1, x: t.x, y: gy + 0.02, z: t.z, w: 2.2 * size, h: 1.5 * size, angle: rnd() * 6.28 }, 0.9, 0.1);
 
     // painted canopy: a few distinct masses carried on visible limbs, at
     // different heights and reaches, so crowns break into a silhouette with
@@ -252,7 +257,7 @@ export function dressMap(L, ctx) {
     } else if (pr.type === 'statue') {
       const gy = H(pr.x, pr.z);
       const s = pr.scale ?? 1;
-      queue(plantBatch, { rect: 'statue', x: pr.x, y: gy - 0.05, z: pr.z, w: 1.6 * s, h: 2.93 * s, cast: true }, 1, 1.5);
+      queue(plantBatch, { rect: pr.broken ? 'statueBroken' : 'statue', x: pr.x, y: gy - 0.05, z: pr.z, w: 1.6 * s, h: 2.93 * s, cast: true }, 1, 1.5);
       extraSolids.push({ x0: pr.x - 0.55 * s, z0: pr.z - 0.35, x1: pr.x + 0.55 * s, z1: pr.z + 0.35, y0: gy - 0.5, y1: gy + 2.6 * s, kind: 'statue' });
     } else if (pr.type === 'stele') {
       const gy = H(pr.x, pr.z);
@@ -269,6 +274,21 @@ export function dressMap(L, ctx) {
       const local = { x: pr.x, y: gy + 1.2, z: pr.z, r: L.id === 'shrine' ? 7.5 : 5.5, color: L.id === 'shrine' ? [1.0, 0.56, 0.24] : [1.0, 0.62, 0.3], k: L.id === 'shrine' ? 1.2 : 0.75 };
       LIGHT.locals.push(local);
       pr.local = local;
+    }
+  }
+
+  // ------------------------------------------------------- authored forms
+  // Large hand-placed ground forms that give empty stretches a subject:
+  // leaf litter drifts, root masses, the sun lily. All visual, no collision.
+  for (const f of L.forms ?? []) {
+    const gy = H(f.x, f.z);
+    const s = f.s ?? 1;
+    if (f.kind === 'litter') queue(flatBatch, { rect: `litter.${f.v ?? 0}`, mode: 1, x: f.x, y: gy + 0.012, z: f.z, w: 2.0 * s, h: 1.5 * s, angle: f.angle ?? 0 }, 0.72, 0.1);
+    else if (f.kind === 'roots') queue(flatBatch, { rect: `roots.${f.v ?? 0}`, mode: 1, x: f.x, y: gy + 0.02, z: f.z, w: 2.6 * s, h: 1.8 * s, angle: f.angle ?? 0 }, 1, 0.1);
+    else if (f.kind === 'moss') queue(flatBatch, { rect: `moss.${f.v ?? 0}`, mode: 1, x: f.x, y: gy + 0.015, z: f.z, w: 2.6 * s, h: 2.0 * s, angle: f.angle ?? 0 }, 1.05, 0.1);
+    else if (f.kind === 'lily') {
+      queue(plantBatch, { rect: 'sunLily', x: f.x, y: gy - 0.05, z: f.z, w: 1.6 * s, h: 2.5 * s, sway: 0.03, cast: true, flip: !!f.flip }, 1, 1);
+      occupied.push([f.x, f.z, 0.7]);
     }
   }
 

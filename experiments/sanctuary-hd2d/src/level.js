@@ -349,7 +349,7 @@ export function buildOverworld() {
     { type: 'relief', x0: 11.2, x1: 14.85, z: 3.0, y: 5.5, h: 1.3 },
     { type: 'relief', x0: 17.15, x1: 20.8, z: 3.0, y: 5.5, h: 1.3 },
     { type: 'statue', x: 8.3, z: 19.4, scale: 0.85 },
-    { type: 'statue', x: 12.7, z: 19.4, scale: 0.85 },
+    { type: 'statue', x: 12.7, z: 19.4, scale: 0.85, broken: true },
     { type: 'column', x: 39.3, z: 4.3, h: 2.6 },
     { type: 'column', x: 43.7, z: 4.3, h: 1.0 },
     { type: 'column', x: 39.3, z: 8.7, h: 1.6 },
@@ -458,9 +458,49 @@ export function buildOverworld() {
     { x: 16.0, z: 20.6, niche: 'water', r: 1.2 },
     { x: 22.6, z: 21.2, niche: 'water', r: 1.0 },
     { x: 36.6, z: 22.4, niche: 'water', r: 1.3 },
+    // sanctuary meadows: a flower patch on the east terrace, ferns in the
+    // shade of the giant tree, a weed line along the court's north wall
+    { x: 40.0, z: 14.6, niche: 'meadow', r: 1.6, density: 1.2 },
+    { x: 42.5, z: 10.4, niche: 'forest', r: 1.3 },
+    { x: 21.5, z: 10.6, niche: 'meadow', r: 1.1 },
+    { x: 26.0, z: 8.0, niche: 'wall', r: 1.0 },
     // the waterfall's upper banks
     { x: 29.4, z: 9.5, niche: 'water', r: 1.0 },
     { x: 35.5, z: 14.2, niche: 'water', r: 1.1 },
+  ];
+
+  // authored large forms (see decor.js and masonryKit.js): the subjects of
+  // otherwise empty stretches. Visual only; nothing here collides.
+  const forms = [
+    // forest: the old wood is swallowing its ruins; litter drifts under the
+    // big trees and their roots crawl out over the floor
+    { kind: 'roots', x: 20.5, z: 77.6, s: 1.2, angle: 0.4 },
+    { kind: 'roots', x: 37.0, z: 73.1, s: 1.1, v: 1, angle: -0.3 },
+    { kind: 'roots', x: 4.5, z: 77.0, s: 1.0, v: 1, angle: 1.2 },
+    { kind: 'litter', x: 23.5, z: 79.4, s: 1.4, angle: 0.3 },
+    { kind: 'litter', x: 33.5, z: 76.2, s: 1.2, v: 1, angle: -0.6 },
+    { kind: 'litter', x: 10.0, z: 80.8, s: 1.3, angle: 2.0 },
+    { kind: 'litter', x: 41.5, z: 80.6, s: 1.3, v: 1, angle: 0.9 },
+    { kind: 'fallen', x: 17.6, z: 66.4, r: 0.8, n: 4 },
+    { kind: 'moss', x: 14.6, z: 67.6, s: 1.1, v: 2 },
+    // courtyard: ceremonial paving still mostly whole; where the aqueduct
+    // failed, blocks fell and the slabs below it heaved
+    { kind: 'slabs', x: 32.0, z: 56.4, r: 0.9, n: 5 },
+    { kind: 'slabs', x: 15.6, z: 47.8, r: 0.7, n: 4 },
+    { kind: 'fallen', x: 14.6, z: 53.8, r: 0.6, n: 4 },
+    { kind: 'fallen', x: 31.4, z: 53.7, r: 0.6, n: 3 },
+    { kind: 'litter', x: 41.0, z: 60.6, s: 1.1, v: 1, angle: 0.5 },
+    // sanctuary: the upper meadows by the falls and the court before the door
+    { kind: 'lily', x: 27.9, z: 10.6 },
+    { kind: 'moss', x: 26.2, z: 9.0, s: 1.2, v: 1, angle: 0.5 },
+    { kind: 'fallen', x: 24.9, z: 10.9, r: 0.7, n: 5 },
+    { kind: 'moss', x: 39.8, z: 10.6, s: 1.3, angle: 1.4 },
+    { kind: 'fallen', x: 44.6, z: 9.6, r: 0.6, n: 4 },
+    { kind: 'roots', x: 44.0, z: 12.4, s: 1.4, angle: 0.2 },
+    { kind: 'litter', x: 19.0, z: 11.0, s: 1.0, angle: 1.0 },
+    { kind: 'slabs', x: 10.4, z: 8.2, r: 0.9, n: 6 },
+    { kind: 'slabs', x: 22.6, z: 8.8, r: 0.6, n: 3 },
+    { kind: 'roots', x: 9.6, z: 31.0, s: 1.2, v: 1, angle: 0.8 },
   ];
 
   // authored wall history (see wallStateFn in world.js): cond 0 intact .. 1 collapsed
@@ -480,6 +520,7 @@ export function buildOverworld() {
   return {
     id: 'overworld',
     dressing,
+    forms,
     wallWear,
     ...P,
     walkMaxZ: 86,
@@ -656,8 +697,9 @@ export function buildShrine() {
   stair(12, 34, 17, 39, 's', 0, 4);
   // main hall (0)
   fill(3, 18, 26, 33, 0, T.FLAG, 1);
-  for (let z = 18; z <= 33; z++)
-    for (let x = 3; x <= 26; x++) if (fbm2(x * 0.3, z * 0.3, 3, 71) > 0.7) TY[idx(x, z)] = T.DIRT;
+  // the hall floor has settled and cracked, but nothing grows through it
+  // except one breach by the west gallery where the channel seeps
+  typeAt(6, 27, 7, 28, T.DIRT);
   // side galleries (2) with their stairs
   fill(1, 19, 4, 33, 2, T.FLAG, 1);
   fill(25, 19, 28, 33, 2, T.FLAG, 1);
