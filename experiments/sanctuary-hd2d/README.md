@@ -278,6 +278,116 @@ about 300k triangles per frame depending on area, 3.4 to 4.2 ms per render,
 of the frame from this camera, the crowns are still assembled from six painted
 cards, and the ground reads as noise more than as paths and clearings.
 
+## Art pass 4: forest, light and locomotion
+
+A targeted final pass on the weakest parts named by pass 3, with the Overgrown
+Sanctuary as the benchmark. No new areas, content, mechanics or rendering
+direction: every change is a sprite painter, a level authoring list or a use
+of the shadow map and shaders already in place. Topology, route, collision and
+the camera are unchanged (trunks keep their collision boxes at the same
+positions and sizes). `node tools/reach.js` still gives 35 reachable targets
+and the same two closed ones, and every scripted playtest passes.
+
+![](docs/screenshots/pass4/00-strongest.jpg)
+
+**Spatial lighting** (`buildMoodLut` in `main.js`, `moodRow` in
+`shaderPatch.js`). Before, the whole visible world took the light of the area
+the player stood in. Now the per-area grades (sun, sky fill, wall bounce and
+ravine depth tint) are baked into a small lookup texture along world z that
+every world material reads per fragment, blended over the same three-tile
+borders as before. The warm Courtyard stays warm when seen from the cool
+forest, the Sanctuary keeps its contrast seen from the Courtyard, and the
+Shrine has its own. Sprites were already lit by their own position.
+
+Pass 3 on the left (the player's area lights everything), pass 4 on the right:
+
+![](docs/screenshots/pass4/spatial-forest-edge.jpg)
+![](docs/screenshots/pass4/spatial-court-edge.jpg)
+
+**Three tree families** (`broadleaf`, `ravineTree`, `youngTree` in
+`sprites.js`; `speciesTree` in `decor.js`). Each crown is painted as a whole
+piece with its own limb structure, cluster arrangement, holes and underside:
+- Mature broadleaf: wide, flat-bottomed tiers stepped over each other on
+  near-horizontal limbs, weighted to one side, with a dark shelf underneath
+  that the limbs disappear into. Short heavy bole; big ones carry a lower side
+  tier on a 3D limb.
+- Ravine tree: tall, slender and leaning out over low damp ground, small
+  drooping caps along the stem trailing curtains of hanging leaf strands that
+  stay see-through; cool blue-green, lit only on top.
+- Young growth: two thin pale stems and an open twig crown with small bright
+  leaf sprays at the tips and sky everywhere between them.
+
+Crowns are placed to frame the route: broadleaves hold the edges, ravine trees
+lean over the damp ground, young growth fills the gaps, and the trees in front
+of the camera are darker framing crowns. Each tree is now 1 to 2 painted cards
+instead of 10 to 20 clumps.
+
+![](docs/screenshots/pass4/species.jpg)
+
+**Authored forest floor** (`FOREST_FLOOR` and `floorField` in `level.js`).
+The floor is a few large shapes: the walked paths as polylines, clearings,
+moss beds, leaf-litter drifts under the broadleaves, damp ground at the
+ridge's foot and under the ravine trees, and banks of fern and shrub that hold
+the edges and the knoll. One sampler with noisy rims feeds the ground shader
+(grass and earth follow the paths continuously, moss and litter are large
+tones), the tile types (so the walked ground is bare), and the plant scatter
+(banks are planted densely, paths and clearings stay clean, everything else is
+sparse). In the forest a second rotated sampling of the grass and earth
+textures takes over in broad shapes, so their 4-tile repeat no longer shows.
+
+**Dappled light** (`dappleLayer` in `decor.js`). An upper canopy above the
+frame exists only in the shadow map: a closed roof of leaves that thins along
+the paths and clearings and opens over authored sun patches on the start
+glade, the stele, the path bends, the lookout ring, the ruined glade and the
+stair down. Small sun-flecks, stretched along the sun's direction, gather
+around the openings. The shade is cool green sky light; the patches get the
+warm sun. Sprites read the same mask for their light.
+
+Pass 3 on the left, pass 4 on the right:
+
+![](docs/screenshots/pass4/forest-1.jpg)
+![](docs/screenshots/pass4/forest-2.jpg)
+
+**Shrine** (`ceilingLayer` and `shaftBeam` in `decor.js`, `ceiling` in the
+shrine map). The hall had one flat cool light from above. Now a vault exists
+in the shadow map, with one collapsed coffer: a cold daylight shaft slants
+across the channel east of the bridge, up to the foot of the carved column,
+with a few faint veils and dust in the air. The rest of the hall is lit by the
+warm braziers. The Warden's chamber keeps its opening over the arena.
+
+Pass 3 on the left, pass 4 on the right:
+
+![](docs/screenshots/pass4/shrine.jpg)
+![](docs/screenshots/pass4/shrine-warden.jpg)
+
+**Hero locomotion** (`heroFrame`/`heroFrames` in `sprites.js`). The front and
+back walk now shift the hips over the planted foot, counter-tilt the
+shoulders, split the feet towards and away from the camera on the contact
+frames and lift the knee on the passing frames; the arms swing out and in, and
+the scarf (now also hanging down the back) and the hair arrive a beat late.
+Still four frames. Landing has a second, recovery frame.
+
+![](docs/screenshots/pass4/hero-walk.jpg)
+
+**Ordinary screenshots.** Fifteen unposed moments along a normal playthrough
+(`docs/screenshots/pass4/ordinary.jpg`: a route point, a random direction and
+duration, no framing). They exposed two recurring problems that were then
+fixed: the sun patches had round, polka-dot rims and dark circles inside them,
+and the hero sank into the forest shade. Patch rims are now built from
+overlapping rotated ellipses, and sprites keep a lighter cool ambient in the
+forest.
+
+![](docs/screenshots/pass4/ordinary.jpg)
+
+**Performance** (SwiftShader, 1280x720 headless, same probe as pass 3):
+forest 324 draw calls / 291k triangles / 2.2 ms, courtyard 426 / 290k / 2.5 ms,
+sanctuary 619 / 293k / 2.6 ms, 20 textures. The forest got cheaper because
+crowns and scatter use fewer cards. The mood lookup is one texture read per
+fragment; the canopy and vault layers are one quad each in the shadow pass.
+
+**Weakest view:** see `docs/screenshots/pass4/99-weakest.jpg` and the
+candid assessment below.
+
 ## What is 2D and what is 3D
 
 **3D (real geometry, lit and shadowed):** terrain, cliffs and retaining walls,
@@ -372,6 +482,22 @@ depth tint / haze, sprite light response, foreground canopy, occluder reveal,
 contact shadows and sprite cast shadows; save screenshot.
 
 ## Candid assessment
+
+**After art pass 4.** The forest now has authored floor shapes, three tree
+families that frame the route, and dappled light. Each area keeps its own
+light seen from its neighbours. The shrine has one clear light idea: a cold
+daylight shaft against warm braziers. The hero's front and back walk carry
+weight.
+
+The forest is still the weakest area. It reads as intentional, but its
+values are too close: dark green on dark green, with too few and too small
+sun patches (mean luminance 48 with spread 23, against 61 and 39 for the
+Sanctuary). That is art direction, more and larger openings, lighter paths
+and darker frames, done in the existing level lists and mood presets.
+
+None of the remaining problems needs new rendering technology. Several older
+notes below (forest lighting, canopies, the shrine's grey, the stiff hero)
+are now largely addressed. The walls and the hero's frame count remain open.
 
 **What works**
 
