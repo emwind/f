@@ -280,6 +280,95 @@ export function masonryTexture(size = 256, seed = 51) {
   return toTexture(t);
 }
 
+// ------------------------------------------------------- authored wall faces
+// Coursed walling over an 8 x 4 unit tile (so a long wall repeats only every
+// 8 units, and the wall shader breaks even that). Courses vary: ordinary
+// ashlar, pairs of thin courses, the odd long stone. A second, data-only
+// texture carries each stone's id (R), distance from its top edge (G) and from
+// any edge (B) so the shader can drop out whole stones, shade the recess and
+// let cracks run across several stones.
+function coursedWall(w, h, seed, { rows: rowHs, bw, big = 0, bevel = 1, tone = 0.22, ramp = R.lime }) {
+  const t = canvas(w, h), id = canvas(w, h);
+  const rnd = mulberry32(seed);
+  const P = 4, PX = (w / h) * P;
+  const rows = [];
+  let y0 = 0;
+  while (y0 < h) {
+    let rh = rowHs[Math.floor(rnd() * rowHs.length)];
+    if (h - y0 - rh < rowHs[0]) rh = h - y0;
+    const blocks = [];
+    const start = Math.floor(rnd() * w);
+    let x0 = start;
+    while (x0 < start + w) {
+      let bwid = bw[0] + Math.floor(rnd() * (bw[1] - bw[0]));
+      if (rnd() < big) bwid = Math.floor(bwid * 1.9);
+      if (start + w - x0 - bwid < bw[0]) bwid = start + w - x0;
+      blocks.push({ x0, w: bwid, tone: rnd(), chip: rnd(), h: rnd() });
+      x0 += bwid;
+    }
+    rows.push({ y0, h: rh, blocks });
+    y0 += rh;
+  }
+  for (let y = 0; y < h; y++) {
+    const row = rows.find((r) => y >= r.y0 && y < r.y0 + r.h);
+    for (let x = 0; x < w; x++) {
+      const u = (x / w) * PX, v = (y / h) * P;
+      let b = row.blocks[0], bx = 0;
+      for (const bb of row.blocks) {
+        const lx = (((x - bb.x0) % w) + w) % w;
+        if (lx < bb.w) { b = bb; bx = lx; break; }
+      }
+      const by = y - row.y0;
+      // the tile is twice as wide as tall: sample noise with v doubled so it wraps both ways
+      const n = fbm2t(u * 6, v * 12, PX * 6, 2, seed + 3);
+      const chipN = fbm2t(u * 10, v * 20, PX * 10, 2, seed + 9);
+      const rough = (chipN - 0.5) * 5 * (0.5 + b.chip);
+      const dl = bx, dr = b.w - 1 - bx, dt = by, db = row.h - 1 - by;
+      const dmin = Math.min(dl, dr, dt, db) + rough;
+      // pillowed face: stones bulge slightly, lit from the upper left
+      const cx = (bx / b.w - 0.5) * 2, cy = (by / row.h - 0.5) * 2;
+      let l = 0.5 + (b.tone - 0.5) * tone + (n - 0.5) * 0.26 - (cx * 0.04 + cy * 0.06) * bevel;
+      if (dt + rough < 4 * bevel) l += 0.15;
+      if (dl + rough < 3 * bevel) l += 0.07;
+      if (db + rough < 4 * bevel) l -= 0.2;
+      if (dr + rough < 3 * bevel) l -= 0.1;
+      let col;
+      if (dmin < 1.6) col = rampColor(ramp, 0.06, x, y);
+      else col = rampColor(ramp, clamp(l, 0, 1), x, y, 0.9);
+      put(t, x, y, col);
+      const hb = Math.floor(hashId(Math.floor(b.x0) * 977 + row.y0 * 131 + seed) * 255);
+      put(id, x, y, [hb, Math.round(clamp(dt / 24, 0, 1) * 255), Math.round(clamp(dmin / 10, 0, 1) * 255)]);
+    }
+  }
+  const tex = toTexture(t);
+  const idt = toTexture(id);
+  idt.colorSpace = THREE.NoColorSpace;
+  idt.magFilter = THREE.NearestFilter;
+  idt.minFilter = THREE.NearestFilter;
+  idt.generateMipmaps = false;
+  return { tex, id: idt };
+}
+
+export function wallTextures() {
+  const ashlar = coursedWall(512, 256, 51, { rows: [14, 18, 22, 26, 30], bw: [26, 80], big: 0.08 });
+  // monumental: few, large, deeply bevelled blocks for foundations and the Warden's hall
+  const mon = coursedWall(512, 256, 77, { rows: [44, 52, 60], bw: [70, 170], bevel: 1.6, tone: 0.16 });
+  // rubble core exposed where facing stones have fallen
+  const t = canvas(256, 256);
+  const P = 4;
+  for (let y = 0; y < 256; y++)
+    for (let x = 0; x < 256; x++) {
+      const u = (x / 256) * P, v = (y / 256) * P;
+      const [d1, d2, cid, cx, cy] = voronoi(x, y, 18, 256, 913);
+      const edge = d2 - d1;
+      const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) + 1e-3;
+      let l = 0.36 + (hashId(cid) - 0.5) * 0.3 + (fbm2t(u * 6, v * 6, P * 6, 2, 917) - 0.5) * 0.2 + ((-dx - dy) / len) * 0.08;
+      const col = edge < 2.5 ? rampColor(R.dirt, 0.2 + fbm2t(u * 4, v * 4, P * 4, 2, 919) * 0.3, x, y) : rampColor(R.lime, clamp(l, 0, 1), x, y);
+      put(t, x, y, col);
+    }
+  return { ashlar: ashlar.tex, ashlarId: ashlar.id, mon: mon.tex, rubble: toTexture(t) };
+}
+
 // ---------------------------------------------------------------- natural cliff
 // Layered rock strata: horizontal beds with lit lips and shadowed undersides,
 // broken by vertical joints. Cooler than the built limestone.
@@ -447,6 +536,7 @@ export function makeTextures() {
     dirt: dirtTexture(),
     ...(() => { const f = flagstoneTextures(); return { flag: f.dry, flagDamp: f.damp }; })(),
     masonry: masonryTexture(),
+    ...(() => { const w = wallTextures(); return { wallAshlar: w.ashlar, wallAshlarId: w.ashlarId, wallMon: w.mon, wallRubble: w.rubble }; })(),
     cliff: cliffTexture(),
     bed: bedTexture(),
     bark: barkTexture(),

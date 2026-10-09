@@ -34,11 +34,17 @@ class Geo {
     this.uv = [];
     this.c = [];
     this.i = [];
+    this.wa = []; // optional wallInfo (cond, wet, style, up)
+    this.wb = []; // optional wallB (distance below the lip, run seed)
   }
-  v(x, y, z, u, w, c) {
+  v(x, y, z, u, w, c, wa, wb) {
     this.p.push(x, y, z);
     this.uv.push(u, w);
     this.c.push(c, c, c);
+    if (wa) {
+      this.wa.push(...wa);
+      this.wb.push(...wb);
+    }
     return this.p.length / 3 - 1;
   }
   quad(a, b, c, d) {
@@ -49,6 +55,10 @@ class Geo {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    if (this.wa.length) {
+      g.setAttribute('wallInfo', new THREE.Float32BufferAttribute(this.wa, 4));
+      g.setAttribute('wallB', new THREE.Float32BufferAttribute(this.wb, 2));
+    }
     g.setIndex(this.i);
     g.computeVertexNormals();
     return g;
@@ -117,6 +127,143 @@ function dampWearField(L) {
     return (a[z0 * W + x0] * (1 - ax) + a[z0 * W + x1] * ax) * (1 - az) + (a[z1 * W + x0] * (1 - ax) + a[z1 * W + x1] * ax) * az;
   };
   return { damp: dampB, wear: wearB, at };
+}
+
+// Authored wall faces. Every wall vertex carries its condition (intact, aged,
+// damaged, collapsed as 0..1), wetness, style (coursed or monumental) and its
+// height above the wall foot. The shader picks coursed or monumental stone
+// (with a monumental foundation course under coursed walls), drops whole
+// stones out to the rubble core on damaged walls, runs cracks across several
+// stones, darkens and streaks wet stone with moss riding the runoff and pale
+// mineral lines, and shifts large wall sections in value so long walls never
+// read as one repeated tile.
+function wallMaterial(tex, L, cliff) {
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: cliff ? tex.cliff : tex.wallAshlar });
+  patchWorldMaterial(mat);
+  const inner = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader) => {
+    inner(shader);
+    Object.assign(shader.uniforms, {
+      tAsh: { value: tex.wallAshlar }, tAshId: { value: tex.wallAshlarId }, tMon: { value: tex.wallMon }, tRub: { value: tex.wallRubble },
+      tRock: { value: tex.cliff }, tNoiseW: { value: tex.noise }, uCliff: { value: cliff ? 1 : 0 }, uCool: { value: L.id === 'shrine' ? 1 : 0 },
+    });
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 wallInfo; attribute vec2 wallB; varying vec4 vWI; varying vec2 vWB;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWI = wallInfo; vWB = wallB;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform sampler2D tAsh, tAshId, tMon, tRub, tRock, tNoiseW; uniform float uCliff, uCool; uniform vec3 uBounce;
+        varying vec4 vWI; varying vec2 vWB;`)
+      .replace('#include <map_fragment>', `
+        vec2 uv = vMapUv;
+        float along = uv.x * 4.0;
+        float cond = vWI.x, wet = vWI.y, style = vWI.z, up = vWI.w, lip = vWB.x, seed = vWB.y;
+        float nLow = texture2D(tNoiseW, vec2(along * 0.035 + seed, vWPos.y * 0.04)).r;
+        float nMid = texture2D(tNoiseW, uv * 0.6 + vec2(0.17, 0.43)).g;
+        vec4 tc;
+        if (uCliff > 0.5) {
+          tc = texture2D(tRock, uv + vec2(0.13, 0.4));
+        } else {
+          vec2 auv = vec2(uv.x * 0.5 + seed * 0.37, uv.y);
+          // a heavier foundation course under coursed walls; its height steps per bay
+          float bay = floor(along * 0.25 + seed * 3.0);
+          float found = 0.42 + 0.28 * fract(sin(bay * 12.9898) * 43758.5453);
+          if (style > 0.5 || up < found) {
+            tc = texture2D(tMon, vec2(auv.x * 0.8 + 0.31, uv.y));
+            float j = abs(up - found);
+            if (style < 0.5 && j < 0.035) tc.rgb *= 0.35;
+          } else {
+            tc = texture2D(tAsh, auv);
+            vec3 idv = texture2D(tAshId, auv).rgb;
+            // facing stones fall out in clusters on damaged walls
+            float patchN = smoothstep(0.44, 0.62, texture2D(tNoiseW, vec2(along * 0.08 + seed, vWPos.y * 0.1)).b);
+            float lose = clamp((cond - 0.42) * 1.15, 0.0, 0.62) * patchN;
+            if (idv.r < lose) {
+              vec4 rb = texture2D(tRub, uv * 1.6);
+              tc.rgb = rb.rgb * mix(0.32, 0.82, smoothstep(0.0, 0.3, idv.g));
+            }
+          }
+          // cracks that run across several stones; the shrine cracks from settling, not roots
+          float cn = texture2D(tNoiseW, vec2(along * 0.16 + seed, vWPos.y * 0.22)).r;
+          float cw = fwidth(cn) * 1.1 + 1e-4;
+          float crackAmt = clamp((cond - 0.18) * 2.0 + uCool * 0.6, 0.0, 1.0);
+          float crackZone = smoothstep(0.42, 0.6, texture2D(tNoiseW, vec2(along * 0.05 - seed, vWPos.y * 0.05)).g);
+          tc.rgb *= 1.0 - (1.0 - smoothstep(0.0, cw, abs(cn - 0.5))) * crackAmt * crackZone * 0.6;
+        }
+        // large-scale value drift so long walls never repeat flatly
+        tc.rgb *= 0.86 + 0.28 * nLow;
+        // wet stone: darker and cooler, worst low down and down the runoff channels
+        float streak = texture2D(tNoiseW, vec2(along * 0.7 + seed, vWPos.y * 0.03)).b;
+        float streakF = texture2D(tNoiseW, vec2(along * 1.9 + 0.5 + seed, vWPos.y * 0.045)).r;
+        float lowWet = wet * (1.0 - smoothstep(0.0, 1.3, up));
+        float w = max(clamp(wet * (0.55 + 1.6 * (streak - 0.5)), 0.0, 1.0), lowWet);
+        w = max(w, 0.18 * smoothstep(0.6, 0.72, streak));
+        tc.rgb *= mix(vec3(1.0), vec3(0.56, 0.6, 0.64), w);
+        // moss follows the water: down the channels from the lip, and along the wet foot
+        float mossM = smoothstep(0.56, 0.68, streak) * wet * (0.35 + 0.65 * (1.0 - smoothstep(0.0, 1.6, lip)));
+        mossM = max(mossM, lowWet * smoothstep(0.45, 0.6, nMid));
+        vec3 mossC = vec3(0.16, 0.21, 0.08) * (0.6 + 1.4 * dot(tc.rgb, vec3(0.333)));
+        tc.rgb = mix(tc.rgb, mossC, clamp(mossM, 0.0, 0.8) * (1.0 - uCool));
+        // pale mineral streaks where water seeps but does not pour
+        float mineral = smoothstep(0.68, 0.72, streakF) * wet * (1.0 - lowWet) * (1.0 - uCliff * 0.5);
+        tc.rgb = mix(tc.rgb, vec3(0.5, 0.48, 0.42), mineral * 0.3);
+        // the shrine's stone is a colder family
+        tc.rgb *= mix(vec3(1.0), vec3(0.88, 0.94, 1.08), uCool);
+        diffuseColor *= tc;
+        // bounce from the lit ground in front: walls facing the camera stay legible in shade
+        vec3 nW = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
+        float facing = max(0.0, nW.z) * (1.0 - abs(nW.y));
+        totalEmissiveRadiance += diffuseColor.rgb * uBounce * facing * (0.65 + 0.35 * (1.0 - smoothstep(0.0, 2.5, up)));
+      `);
+  };
+  return mat;
+}
+
+// Where a wall stands decides how it has aged: the forest's walls are old and
+// swallowed, the courtyard's mostly intact, the sanctuary's span the whole
+// range, the shrine's are cracked by settling and the Warden's hall is
+// monumental. Wetness comes from water nearby and the falls; L.wallWear
+// boxes override both for authored spots.
+function wallStateFn(L) {
+  const W = L.W, D = L.D;
+  const wdist = new Float32Array(W * D).fill(9);
+  for (let z = 0; z < D; z++)
+    for (let x = 0; x < W; x++) {
+      if (L.TY[z * W + x] !== T.WATER) continue;
+      for (let dz = -3; dz <= 3; dz++)
+        for (let dx = -3; dx <= 3; dx++) {
+          const xx = x + dx, zz = z + dz;
+          if (xx < 0 || zz < 0 || xx >= W || zz >= D) continue;
+          wdist[zz * W + xx] = Math.min(wdist[zz * W + xx], Math.hypot(dx, dz));
+        }
+    }
+  const shr = L.id === 'shrine', vista = L.id === 'vista';
+  return (x, z, y) => {
+    const n = fbm2(x * 0.11, z * 0.11, 2, 41);
+    const ix = clamp(Math.floor(x), 0, W - 1), iz = clamp(Math.floor(z), 0, D - 1);
+    let cond, wet = 0, style = 0;
+    if (shr) {
+      cond = 0.15 + n * 0.4;
+      wet = 0.12;
+      if (z < 17) style = 1;
+    } else if (vista) cond = 0.3;
+    else if (z >= 64) cond = 0.45 + n * 0.7;
+    else if (z >= 42) cond = 0.05 + n * 0.55;
+    else cond = n * 1.1;
+    const d = Math.min(wdist[iz * W + ix], wdist[clamp(iz + 1, 0, D - 1) * W + ix], wdist[iz * W + clamp(ix + 1, 0, W - 1)]);
+    wet = Math.max(wet, clamp(1 - d / 3.2, 0, 1) * (shr ? 0.6 : 1));
+    for (const wf of L.waterfalls ?? []) {
+      const dx = Math.max(wf.x0 - x, 0, x - wf.x1), dz = Math.abs(z - wf.z);
+      wet = Math.max(wet, clamp(1.2 - Math.hypot(dx, dz) / 4, 0, 1));
+    }
+    for (const o of L.wallWear ?? [])
+      if (x >= o.x0 && x <= o.x1 && z >= o.z0 && z <= o.z1) {
+        if (o.cond !== undefined) cond = o.cond;
+        if (o.wet !== undefined) wet = o.wet;
+        if (o.style !== undefined) style = o.style;
+      }
+    return [clamp(cond, 0, 1), clamp(wet, 0, 1), style];
+  };
 }
 
 function groundMaterial(tex) {
@@ -191,8 +338,8 @@ export function buildWorld(L, tex) {
     [T.WATER]: lambert(tex.bed),
     [T.ROCK]: lambert(tex.cliff),
     [T.ROOT]: lambert(tex.bark),
-    masonry: lambert(tex.masonry),
-    cliff: lambert(tex.cliff),
+    masonry: wallMaterial(tex, L, false),
+    cliff: wallMaterial(tex, L, true),
   };
   const geos = {};
   const G = (k) => (geos[k] ??= new Geo());
@@ -215,6 +362,7 @@ export function buildWorld(L, tex) {
     ampField = { W: VW, a };
   }
   const field = dampWearField(L);
+  const wallState = wallStateFn(L);
   const varTint = (x, z) => 0.9 + fbm2(x * 0.13, z * 0.13, 3, 21) * 0.2;
 
   // ambient occlusion / rim light for a point on a top surface
@@ -317,6 +465,7 @@ export function buildWorld(L, tex) {
         const bot0 = Math.min(a0, b0), bot1 = Math.min(a1, b1);
         const mas = L.MAS[i] || (L.stairs.get(i) && !L.stairs.get(i).natural);
         const g = G(mas ? 'masonry' : 'cliff');
+        const runSeed = ((ndz !== 0 ? tz + ndz * 0.5 : tx + ndx * 0.5) * 0.137) % 1;
         const hspan = Math.max(a0 - bot0, a1 - bot1);
         const NV = Math.max(1, Math.ceil(hspan / 0.5));
         const NH = SUB;
@@ -335,7 +484,8 @@ export function buildWorld(L, tex) {
             // the lowest part of a wall standing in water darkens and cools
             if (bot < 0) shade *= 0.85;
             shade *= varTint(x + 3, z - 2);
-            ids.push(g.v(x + dx, y, z + dz, along * TEX_SCALE, -y * TEX_SCALE, shade));
+            const st = wallState(x, z, y);
+            ids.push(g.v(x + dx, y, z + dz, along * TEX_SCALE, -y * TEX_SCALE, shade, [st[0], st[1], st[2], up], [top - y, runSeed]));
           }
         }
         for (let r = 0; r < NV; r++)
@@ -406,7 +556,7 @@ export function buildWorld(L, tex) {
       group.add(buildRoof(s, flagMat, masonryMat));
       continue;
     }
-    group.add(buildBlock(s, s.kind === 'parapet' ? masonryMat : flagMat, masonryMat));
+    group.add(buildBlock(s, s.kind === 'parapet' ? masonryMat : flagMat, masonryMat, wallState));
   }
 
   // --- water surface
@@ -498,11 +648,23 @@ function withShade(g, fn) {
   return g;
 }
 
-function buildBlock(s, topMat, sideMat) {
+function buildBlock(s, topMat, sideMat, wallState) {
   const grp = new THREE.Group();
   const g = withShade(boxGeo(s.x0, s.y0, s.z0, s.x1, s.y1, s.z1, s.kind === 'parapet' ? 0.08 : 0.05, Math.floor(s.z0 * 31 + s.x0 * 7)), (x, y) =>
     0.6 + 0.4 * smoothstep(s.y0, s.y0 + 1.5, y)
   );
+  if (wallState) {
+    // piers and parapets age like the walls around them
+    const p = g.attributes.position, wa = [], wb = [];
+    const seed = ((s.x0 * 0.31 + s.z0 * 0.17) % 1 + 1) % 1;
+    for (let k = 0; k < p.count; k++) {
+      const st = wallState(p.getX(k), p.getZ(k), p.getY(k));
+      wa.push(st[0], st[1], st[2], p.getY(k) - Math.max(s.y0, -0.2));
+      wb.push(s.y1 - p.getY(k), seed);
+    }
+    g.setAttribute('wallInfo', new THREE.Float32BufferAttribute(wa, 4));
+    g.setAttribute('wallB', new THREE.Float32BufferAttribute(wb, 2));
+  }
   // BoxGeometry groups: 0 +x,1 -x,2 +y,3 -y,4 +z,5 -z
   const mesh = new THREE.Mesh(g, [sideMat, sideMat, topMat, sideMat, sideMat, sideMat]);
   mesh.castShadow = mesh.receiveShadow = true;

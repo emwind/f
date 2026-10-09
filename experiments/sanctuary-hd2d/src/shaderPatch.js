@@ -17,6 +17,8 @@ export const worldUniforms = {
   uHaze: { value: new THREE.Color('#29332f') },
   uHazeAmt: { value: 0.25 },
   uDeepTop: { value: 2.0 },
+  // light bounced off sunlit ground into the wall faces that face the camera
+  uBounce: { value: new THREE.Color(0.18, 0.16, 0.13) },
 };
 
 export const GLSL_COMMON = /* glsl */ `

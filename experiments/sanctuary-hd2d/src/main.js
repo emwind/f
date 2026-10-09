@@ -40,19 +40,19 @@ const THEMES = {
   day: {
     bg: '#0e1411', sunAz: 305, sunEl: 52, sunColor: '#ffe6c0', sunI: 3.3, sky: '#a6bccb', ground: '#4b4232', hemiI: 1.1,
     fillI: 0.22, deep: '#16232a', deepAmt: 0.55, deepTop: 1.6, highY: 7.6, haze: '#26302c', hazeAmt: 0.35,
-    spriteAmbient: [0.44, 0.5, 0.56], spriteSun: [0.8, 0.7, 0.52], audio: 'day',
+    spriteAmbient: [0.44, 0.5, 0.56], spriteSun: [0.8, 0.7, 0.52], audio: 'day', bounce: '#9a8466',
   },
   shrine: {
     bg: '#06080a', sunAz: 200, sunEl: 74, sunColor: '#a9bfd8', sunI: 1.1, sky: '#5d6e86', ground: '#2b2420', hemiI: 0.62,
     fillI: 0.12, deep: '#0c141b', deepAmt: 0.45, deepTop: 0.6, highY: 4.4, haze: '#050607', hazeAmt: 1.0,
-    spriteAmbient: [0.3, 0.34, 0.44], spriteSun: [0.26, 0.29, 0.36], audio: 'shrine',
+    spriteAmbient: [0.3, 0.34, 0.44], spriteSun: [0.26, 0.29, 0.36], audio: 'shrine', bounce: '#3e4658',
   },
   // late light over the hidden vale: low warm sun from behind the tower,
   // the valley floor sinking into warm haze
   vista: {
     bg: '#a9b3a6', sunAz: 160, sunEl: 30, sunColor: '#ffd9a0', sunI: 2.7, sky: '#c8ccc0', ground: '#56493a', hemiI: 1.35,
     fillI: 0.42, deep: '#b5ac86', deepAmt: 0.5, deepTop: 0.5, highY: 30, haze: '#000000', hazeAmt: 0,
-    spriteAmbient: [0.6, 0.6, 0.58], spriteSun: [0.64, 0.53, 0.38], audio: 'day',
+    spriteAmbient: [0.6, 0.6, 0.58], spriteSun: [0.64, 0.53, 0.38], audio: 'day', bounce: '#9a8a6c',
   },
 };
 
@@ -62,31 +62,31 @@ const THEMES = {
 const MOODS = {
   // cool shade under the canopy, warm broken sun patches
   'Forest Approach': {
-    sunColor: '#ffd8a2', sunI: 3.55, sky: '#88a2b6', ground: '#3f3a2c', hemiI: 0.92, fillI: 0.16,
+    bounce: '#6f6a58', sunColor: '#ffd8a2', sunI: 3.55, sky: '#88a2b6', ground: '#3f3a2c', hemiI: 0.92, fillI: 0.16,
     deep: '#13222a', deepAmt: 0.6, spriteAmbient: [0.37, 0.44, 0.53], spriteSun: [0.88, 0.73, 0.5],
   },
   // open sun on warm limestone, the pool as the cool counterpoint
   'Ruined Courtyard': {
-    sunColor: '#ffe7c2', sunI: 3.6, sky: '#b2c3cc', ground: '#64563f', hemiI: 1.18, fillI: 0.26, deepAmt: 0.42,
+    bounce: '#a88f6c', sunColor: '#ffe7c2', sunI: 3.6, sky: '#b2c3cc', ground: '#64563f', hemiI: 1.18, fillI: 0.26, deepAmt: 0.42,
     spriteAmbient: [0.47, 0.51, 0.55], spriteSun: [0.84, 0.74, 0.55],
   },
   // the strongest contrast: bright architecture, cool ravine shadow
   'Overgrown Sanctuary': {
-    sunColor: '#ffe3b2', sunI: 3.75, sky: '#90a9c2', ground: '#433a2d', hemiI: 0.9, fillI: 0.18,
+    bounce: '#8c7a62', sunColor: '#ffe3b2', sunI: 3.75, sky: '#90a9c2', ground: '#433a2d', hemiI: 0.9, fillI: 0.18,
     deep: '#0f1f2b', deepAmt: 0.7, deepTop: 1.8, spriteAmbient: [0.39, 0.46, 0.56], spriteSun: [0.88, 0.75, 0.53],
   },
   // cooler and bluer, darker ambient; the braziers carry the warmth
   'Underground Shrine': {
-    sunColor: '#9cb6dc', sunI: 1.0, sky: '#4c6286', hemiI: 0.55, fillI: 0.1,
+    bounce: '#3e4658', sunColor: '#9cb6dc', sunI: 1.0, sky: '#4c6286', hemiI: 0.55, fillI: 0.1,
     spriteAmbient: [0.26, 0.31, 0.44], spriteSun: [0.24, 0.28, 0.37],
   },
   // focused and readable: a brighter shaft over the arena, less murk
   "Warden's Chamber": {
-    sunColor: '#b7c8e0', sunI: 1.55, sky: '#6a7d99', hemiI: 0.78, fillI: 0.16, hazeAmt: 0.75,
+    bounce: '#4d5468', sunColor: '#b7c8e0', sunI: 1.55, sky: '#6a7d99', hemiI: 0.78, fillI: 0.16, hazeAmt: 0.75,
     spriteAmbient: [0.35, 0.39, 0.5], spriteSun: [0.36, 0.38, 0.45],
   },
 };
-const MOOD_KEYS = ['sunColor', 'sunI', 'sky', 'ground', 'hemiI', 'fillI', 'deep', 'deepAmt', 'deepTop', 'hazeAmt', 'spriteAmbient', 'spriteSun'];
+const MOOD_KEYS = ['bounce', 'sunColor', 'sunI', 'sky', 'ground', 'hemiI', 'fillI', 'deep', 'deepAmt', 'deepTop', 'hazeAmt', 'spriteAmbient', 'spriteSun'];
 const moodCache = new Map();
 const _mc = new THREE.Color();
 function moodAt(z) {
@@ -133,6 +133,7 @@ function applyMood(z, force) {
   worldUniforms.uDeepAmount.value = m.deepAmt;
   worldUniforms.uDeepTop.value = m.deepTop;
   worldUniforms.uHazeAmt.value = m.hazeAmt;
+  worldUniforms.uBounce.value.copy(m.bounce);
   if (!G.debug.lighting) return;
   sun.intensity = m.sunI;
   hemi.color.copy(m.sky);

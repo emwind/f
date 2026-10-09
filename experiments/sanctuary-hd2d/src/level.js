@@ -463,9 +463,24 @@ export function buildOverworld() {
     { x: 35.5, z: 14.2, niche: 'water', r: 1.1 },
   ];
 
+  // authored wall history (see wallStateFn in world.js): cond 0 intact .. 1 collapsed
+  const wallWear = [
+    // the waterfall: soaked, eroded lower courses
+    { x0: 28, z0: 0, x1: 37, z1: 9, cond: 0.55, wet: 1 },
+    // the temple front behind the shrine door stays crisp and carved
+    { x0: 6, z0: 0, x1: 26, z1: 4.5, cond: 0.12 },
+    // the aqueduct's supports have lost their facing in places
+    { x0: 14, z0: 48, x1: 31, z1: 51, cond: 0.78 },
+    // a collapsed corner of the courtyard's west precinct
+    { x0: 2, z0: 44, x1: 7, z1: 48, cond: 0.9 },
+    // the ring of fallen stones in the forest clearing
+    { x0: 11.5, z0: 64.5, x1: 18, z1: 70, cond: 1 },
+  ];
+
   return {
     id: 'overworld',
     dressing,
+    wallWear,
     ...P,
     walkMaxZ: 86,
     solids,
