@@ -29,7 +29,7 @@ scene.fog = new THREE.Fog(0x8f988f, 34, 95);
 
 // restrained key light from the upper-left (west, slightly south) + cool sky fill
 const sun = new THREE.DirectionalLight(0xfff0d8, 2.7);
-const SUN_DIR = new THREE.Vector3(-0.62, 1.0, 0.32).normalize();
+const SUN_DIR = new THREE.Vector3(-0.72, 0.8, 0.36).normalize();
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 90 });
@@ -46,9 +46,15 @@ const player = new Player(scene, level.col, fx);
 player.spawn(+(Q.get('x') ?? SPAWN.x), +(Q.get('z') ?? SPAWN.z));
 let guardian = new Guardian(scene, level.col, fx, -3, Y.cy, -5.5);
 
+// big-tree canopy fades when the player walks beneath it (keeps the player readable)
+let canopy = null;
+level.group.traverse((o) => { if (o.userData.canopy) canopy = o; });
+if (canopy) for (const m of [canopy.material, canopy.material.userData.alt]) { m.transparent = true; m.opacity = 1; }
+let canopyA = 1;
+
 // faint seal glow on the shrine door: brightens as the player approaches
 const sealGlow = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.09, 6, 28), new THREE.MeshBasicMaterial({ color: 0xe2c37a, transparent: true, opacity: 0.0, depthWrite: false }));
-sealGlow.position.set(SHRINE_DOOR.x, SHRINE_DOOR.y + 2.1, -17.12);
+sealGlow.position.set(SHRINE_DOOR.x, SHRINE_DOOR.y + 2.0, -18.33);
 scene.add(sealGlow);
 
 // ---------------------------------------------------------------- camera
@@ -105,6 +111,7 @@ function onDebugKey(code) {
   else if (code === 'BracketRight') CAM.dist = Math.min(48, CAM.dist + 2);
   else if (code === 'Minus') CAM.fov = Math.max(18, CAM.fov - 3);
   else if (code === 'Equal') CAM.fov = Math.min(60, CAM.fov + 3);
+  else if (code === 'KeyC') GLOBAL.uCloud.value = GLOBAL.uCloud.value > 0 ? 0 : 0.24;
   else if (code === 'KeyH') document.getElementById('help').classList.toggle('hide');
   else if (code === 'KeyR') reset();
   updateHud();
@@ -149,6 +156,11 @@ function step(dt, inp) {
   if (player.pos.y < Y.water && Math.hypot(player.vel.x, player.vel.z) > 1 && rippleT <= 0) { fx.ripple(new THREE.Vector3(player.pos.x, Y.water + 0.02, player.pos.z)); rippleT = 0.22; }
   const dd = Math.hypot(player.pos.x - SHRINE_DOOR.x, player.pos.z - SHRINE_DOOR.z);
   sealGlow.material.opacity = (0.08 + 0.5 * (1 - THREE.MathUtils.smoothstep(dd, 2, 12))) * (0.85 + 0.15 * Math.sin(GLOBAL.uTime.value * 2));
+  if (canopy) {
+    const under = Math.hypot(player.pos.x + 14.5, player.pos.z + 6.8) < 5.6 && player.pos.y < 6;
+    canopyA += ((under ? 0.38 : 1) - canopyA) * Math.min(1, dt * 6);
+    canopy.material.opacity = canopy.material.userData.alt.opacity = canopyA;
+  }
   if (player.hp !== lastHp) { lastHp = player.hp; updateHud(); }
   placeCamera(dt);
 }

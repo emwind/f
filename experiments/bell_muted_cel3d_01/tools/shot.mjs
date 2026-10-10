@@ -7,7 +7,7 @@ catch { ({ chromium } = createRequire((process.env.NODE_PATH || '.') + '/x.js')(
 const [out, q = '', code = '', wait = '700'] = process.argv.slice(2);
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
+page.on('pageerror', async (e) => { console.log('PAGEERROR', e.message); await browser.close(); process.exit(1); });
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log('console:', m.text()); });
 await page.goto('http://localhost:8123/index.html?nohelp&capture&' + q);
 await page.waitForFunction(() => window.__ready === true, null, { timeout: 180000 });

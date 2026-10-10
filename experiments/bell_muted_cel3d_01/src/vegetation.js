@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.min.js';
-import { Batch, R, rr, rng, mat4, tubeGeom, rockGeom } from './geom.js';
+import { Batch, R, rr, rng, mat4, tubeGeom, rockGeom, noise3 } from './geom.js';
 import { PAL } from './materials.js';
 
 // Vegetation is accumulated into shared batches (one draw call per material)
@@ -7,7 +7,9 @@ export const VEG = {
   leaf: new Batch(),   // canopy / shrubs (spherical normals → big readable masses)
   frond: new Batch(),  // ferns, reeds, vines leaves (double sided)
   wood: new Batch(),   // trunks, branches, roots
+  canopy: new Batch(), // big tree canopy (fades when the player is underneath)
 };
+let CANOPY = false;
 
 const _v = new THREE.Vector3();
 
@@ -21,7 +23,19 @@ export function clump(cx, cy, cz, size, { color = PAL.leaf, dark = PAL.leafDark,
     blobs.push([cx + Math.cos(a) * d, cy + rr(-0.15, 0.25) * size - (d / size) * droop * size, cz + Math.sin(a) * d * 0.85, size * rr(0.5, 0.75) * (i === 0 ? 1.15 : 1)]);
   }
   for (const [x, y, z, r] of blobs) {
-    const g = rockGeom(r, { flat, detail: 2, jag: 0.1 });
+    const g = rockGeom(r, { flat, detail: r > 0.9 ? 3 : 2, jag: 0.0 });
+    // lumpy silhouette: low-frequency noise displacement → leaf-mass lobes, not spheres
+    {
+      const p0 = g.attributes.position, seed = R() * 100;
+      for (let i = 0; i < p0.count; i++) {
+        const px = p0.getX(i), py = p0.getY(i), pz = p0.getZ(i);
+        const l = Math.hypot(px, py / flat, pz) || 1;
+        const nn = noise3(px / r * 2.2 + seed, py / r * 2.2, pz / r * 2.2) * 0.65 + noise3(px / r * 5 + seed, py / r * 5, pz / r * 5) * 0.35;
+        const k = 1 + (nn - 0.5) * 0.55;
+        p0.setXYZ(i, px * k, py * k, pz * k);
+        void l;
+      }
+    }
     g.translate(x, y, z);
     const g2 = g.index ? g.toNonIndexed() : g;
     const p = g2.attributes.position;
@@ -41,7 +55,7 @@ export function clump(cx, cy, cz, size, { color = PAL.leaf, dark = PAL.leafDark,
     }
     g2.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     g2.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    VEG.leaf.add(g2, null, 0xffffff, { keepNormals: true });
+    (CANOPY ? VEG.canopy : VEG.leaf).add(g2, null, 0xffffff, { keepNormals: true });
     g.dispose();
   }
 }
@@ -130,11 +144,11 @@ export function root(points, r0 = 0.22, r1 = 0.05) {
 export function bigTree(x, y, z) {
   const T = (pts, r0, r1) => branch(pts.map(([a, b, c]) => [x + a, y + b, z + c]), r0, r1, PAL.bark);
   // trunk leans toward the courtyard (+x, slightly +z)
-  T([[0, -0.3, 0], [0.2, 1.5, 0.1], [0.7, 3.2, 0.3], [1.3, 4.6, 0.4]], 0.85, 0.5);
-  // buttress flare
-  for (let i = 0; i < 5; i++) {
-    const a = i / 5 * Math.PI * 2 + 0.3;
-    T([[Math.cos(a) * 0.3, 1.4, Math.sin(a) * 0.3], [Math.cos(a) * 0.8, 0.4, Math.sin(a) * 0.8], [Math.cos(a) * 1.3, -0.1, Math.sin(a) * 1.3]], 0.42, 0.18);
+  T([[0, -0.3, 0], [0.2, 1.5, 0.1], [0.7, 3.2, 0.3], [1.3, 4.6, 0.4]], 1.0, 0.6);
+  // buttress flare: short, thick, hugging the ground
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + 0.3, L = 1.2 + (i % 2) * 0.5;
+    T([[Math.cos(a) * 0.2, 1.1, Math.sin(a) * 0.2], [Math.cos(a) * 0.75, 0.35, Math.sin(a) * 0.75], [Math.cos(a) * L, 0.05, Math.sin(a) * L]], 0.6, 0.22);
   }
   // major limbs
   T([[1.2, 4.4, 0.4], [3.0, 5.6, 0.9], [5.2, 6.1, 1.6], [6.6, 6.0, 2.4]], 0.42, 0.14);
@@ -142,12 +156,14 @@ export function bigTree(x, y, z) {
   T([[1.0, 4.0, 0.4], [-0.8, 5.3, 1.0], [-2.2, 6.0, 1.4]], 0.32, 0.1);
   T([[2.6, 5.4, 0.8], [3.4, 6.8, -0.4], [4.0, 7.6, -1.0]], 0.22, 0.08);
   // canopy: a few large asymmetric masses, heaviest over the courtyard side
+  CANOPY = true;
   const C = (a, b, c, s, o = {}) => clump(x + a, y + b, z + c, s, o);
   C(5.6, 6.6, 1.9, 2.2, { n: 6 });
   C(3.4, 7.9, -0.6, 2.4, { n: 6, color: PAL.leafOlive });
   C(0.8, 8.5, -1.9, 2.3, { n: 6 });
   C(-1.9, 6.7, 1.2, 1.8, { n: 5, color: PAL.leaf });
   C(1.6, 6.4, 1.6, 1.6, { n: 4, color: PAL.leafDark, dark: 0x27342a });
+  CANOPY = false;
 }
 
 // A slimmer secondary tree
@@ -165,6 +181,10 @@ export function buildVegMeshes(mats) {
   mk(VEG.leaf, mats.leaf);
   mk(VEG.frond, mats.frond);
   mk(VEG.wood, mats.wood);
+  if (!VEG.canopy.empty) {
+    const me = new THREE.Mesh(VEG.canopy.build(), mats.canopy); me.castShadow = true; me.receiveShadow = true; me.userData.canopy = true;
+    out.push(me);
+  }
   return out;
 }
 void rng;

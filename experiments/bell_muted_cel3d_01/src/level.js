@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.min.js';
-import { Batch, R, rr, mat4, mesh, stoneBlock, rockGeom } from './geom.js';
+import { Batch, R, rr, mat4, mesh, stoneBlock, rockGeom, noise3 } from './geom.js';
 import { PAL, paintMat } from './materials.js';
 import { Collider } from './collision.js';
 import * as V from './vegetation.js';
@@ -16,7 +16,8 @@ import * as V from './vegetation.js';
 // ---------------------------------------------------------------------------
 export const Y = { bed: -0.8, water: -0.38, low: 0, cy: 3, ter: 6 };
 export const SPAWN = { x: -9, z: 14 };
-export const SHRINE_DOOR = { x: -2, y: 6, z: -16.6 };
+export const SHRINE_DOOR = { x: -2, y: 6.66, z: -18.8 };
+const SHRINE_ROOTS = [];
 
 export function buildLevel(scene) {
   const col = new Collider();
@@ -34,6 +35,7 @@ export function buildLevel(scene) {
     gold: paintMat(0xffffff, { noise: 0.1, scale: 1.2, moss: 0.0 }),
     bed: paintMat(0xffffff, { noise: 0.2, scale: 0.35, moss: 0.3, mossColor: PAL.mossDark }),
     leaf: paintMat(0xffffff, { noise: 0.1, scale: 0.4, moss: 0 }),
+    canopy: paintMat(0xffffff, { noise: 0.1, scale: 0.4, moss: 0, canopy: 1 }),
     frond: paintMat(0xffffff, { noise: 0.08, scale: 0.6, moss: 0, side: THREE.DoubleSide }),
     wood: paintMat(0xffffff, { noise: 0.12, scale: 0.8, moss: 0.35, mossColor: PAL.mossDark }),
   };
@@ -116,15 +118,21 @@ export function buildLevel(scene) {
   }
 
   // ---- paving: slabs with gaps, some missing, cracked or tilted ----
-  function pave(x0, x1, z0, z1, y, { size = 1.5, missing = 0.08, tilt = 0.02, colors = [PAL.paving, PAL.paving, 0xa39880], avoid = () => false } = {}) {
+  function pave(x0, x1, z0, z1, y, { size = 1.5, missing = 0.08, tilt = 0.02, colors = [PAL.paving, PAL.paving, 0xa39880], avoid = () => false, loss = 0.5 } = {}) {
     for (let z = z0; z < z1 - 0.2; ) {
       const d = Math.min(rr(size * 0.7, size * 1.1), z1 - z);
       for (let x = x0 + rr(-0.4, 0); x < x1 - 0.2; ) {
-        const w = Math.min(rr(size * 0.8, size * 1.3), x1 - x);
+        const big = R() < 0.12;
+        const w = Math.min(rr(size * 0.8, size * 1.3) * (big ? 1.6 : 1), x1 - x);
         const cx = x + w / 2, cz = z + d / 2;
-        if (cx > x0 && R() > missing && !avoid(cx, cz)) {
-          const g = stoneBlock(w - 0.05, 0.16, d - 0.05, { jitter: 0.04, chip: 0.2, bevel: 0.25 });
-          B.paving.add(g, mat4(cx, y + 0.03 + rr(-0.02, 0.02), cz, rr(-tilt, tilt), rr(-0.02, 0.02), rr(-tilt, tilt)), tint(pick(colors), 0.035));
+        // clustered loss: low-frequency noise opens calm soil/moss zones
+        const n = noise3(cx * 0.16 + 3.1, cz * 0.16, y * 0.3);
+        const lost = n > 1 - loss * 0.6 + (R() - 0.5) * 0.08;
+        const edge = n > 1 - loss * 0.6 - 0.07; // fringe of the lost zone: broken / tilted slabs
+        if (cx > x0 && R() > missing && !avoid(cx, cz) && !lost) {
+          const t = edge ? tilt * 4 : tilt;
+          const g = stoneBlock((w - 0.05) * (edge ? rr(0.55, 0.9) : 1), 0.16, (d - 0.05) * (edge ? rr(0.6, 0.9) : 1), { jitter: 0.04, chip: edge ? 0.6 : 0.2, bevel: 0.25 });
+          B.paving.add(g, mat4(cx, y + 0.03 + rr(-0.02, 0.02), cz, rr(-t, t), rr(-0.02, 0.02) * (edge ? 6 : 1), rr(-t, t)), tint(pick(colors), 0.035));
         }
         x += w;
       }
@@ -133,10 +141,11 @@ export function buildLevel(scene) {
   }
 
   // ---- flat irregular ground patch (moss / dirt / damp zones) ----
-  function patch(x, y, z, r, color, { pts = 9, squash = 0.7, rot = 0 } = {}) {
+  function patch(x, y, z, r, color, { pts = 22, squash = 0.7, rot = 0 } = {}) {
     const s = new THREE.Shape();
+    const ph = R() * 10;
     for (let i = 0; i < pts; i++) {
-      const a = (i / pts) * Math.PI * 2, rad = r * rr(0.65, 1.15);
+      const a = (i / pts) * Math.PI * 2, rad = r * (0.85 + 0.22 * Math.sin(a * 2 + ph) + 0.12 * Math.sin(a * 5 + ph * 2) + rr(-0.04, 0.04));
       const px = Math.cos(a) * rad, pz = Math.sin(a) * rad * squash;
       if (i === 0) s.moveTo(px, pz); else s.lineTo(px, pz);
     }
@@ -285,7 +294,7 @@ export function buildLevel(scene) {
   // BRIDGE over the gorge (courtyard → promontory)
   // =========================================================================
   col.box(10, 18, -7.2, -4.8, 2.3, Y.cy);
-  pave(10, 18, -7.0, -5.0, Y.cy - 0.12, { size: 1.0, missing: 0.0, tilt: 0.03 });
+  pave(10, 18, -7.0, -5.0, Y.cy - 0.12, { size: 1.0, missing: 0.0, tilt: 0.03, loss: 0 });
   B.stone.add(new THREE.BoxGeometry(8, 0.55, 2.4), mat4(14, 2.62, -6), PAL.limeDark);
   // arch ring of voussoirs
   {
@@ -354,41 +363,69 @@ export function buildLevel(scene) {
   // =========================================================================
   // TERRACE + SHRINE (the destination)
   // =========================================================================
-  pave(-12, 27, -23.5, -12.4, Y.ter, { missing: 0.16, size: 1.7, avoid: (x, z) => x > -6.8 && x < 2.8 && z < -16.0 });
+  pave(-12, 27, -23.5, -12.4, Y.ter, { missing: 0.16, size: 1.7, loss: 0.75, avoid: (x, z) => x > -8.5 && x < 4.5 && z < -15.4 });
   {
-    const sx = -2, sz = -20;
-    // plinth: two shallow steps
-    col.box(-7.2, 3.2, -24, -16.2, Y.ter, Y.ter + 0.25);
-    col.box(-6.4, 2.4, -24, -17.0, Y.ter, Y.ter + 0.5);
-    B.stoneClean.add(stoneBlock(10.4, 0.25, 7.8, { chip: 0.2 }), mat4(sx, Y.ter + 0.125, -20.1), tint(PAL.limestone));
-    B.stoneClean.add(stoneBlock(8.8, 0.25, 7.0, { chip: 0.2 }), mat4(sx, Y.ter + 0.375, -20.5), tint(0xbfb193));
-    // body: heavy battered block mass
-    masonry({ axis: 'x', at: -17.6, out: 1, from: -6, to: -3.4, y0: Y.ter + 0.5, y1: Y.ter + 4.6, depth: 0.8, coping: false, colors: [PAL.limeCool, PAL.limestone] });
-    masonry({ axis: 'x', at: -17.6, out: 1, from: -0.6, to: 2, y0: Y.ter + 0.5, y1: Y.ter + 4.6, depth: 0.8, coping: false, colors: [PAL.limeCool, PAL.limestone] });
-    masonry({ axis: 'x', at: -17.6, out: 1, from: -3.4, to: -0.6, y0: Y.ter + 3.5, y1: Y.ter + 4.6, depth: 0.8, coping: false });
-    masonry({ axis: 'z', at: -6, out: -1, from: -23.5, to: -17.6, y0: Y.ter + 0.5, y1: Y.ter + 4.6, coping: false });
-    masonry({ axis: 'z', at: 2, out: 1, from: -23.5, to: -17.6, y0: Y.ter + 0.5, y1: Y.ter + 4.6, coping: false });
-    B.stone.add(new THREE.BoxGeometry(7.6, 4.1, 5.6), mat4(sx, Y.ter + 2.55, -20.6), PAL.limeDark);
-    col.box(-6, 2, -23.5, -17.6, Y.ter, Y.ter + 9);
-    // stepped roof: two receding slabs + ridge
-    B.stoneClean.add(stoneBlock(8.8, 0.5, 7.0, { chip: 0.3 }), mat4(sx, Y.ter + 4.85, -20.5), tint(PAL.limestone));
-    B.stoneClean.add(stoneBlock(7.0, 0.55, 5.4, { chip: 0.3 }), mat4(sx, Y.ter + 5.35, -20.6), tint(0xb3a68a));
-    B.stoneClean.add(stoneBlock(4.8, 0.7, 3.4, { chip: 0.35 }), mat4(sx, Y.ter + 5.95, -20.7), tint(PAL.limeCool));
-    // indigo frieze band with bronze studs
-    B.trim.add(new THREE.BoxGeometry(8.3, 0.34, 0.1), mat4(sx, Y.ter + 4.25, -17.17), PAL.indigo);
-    for (let i = 0; i < 9; i++) B.gold.add(new THREE.CylinderGeometry(0.08, 0.08, 0.08, 6), mat4(sx - 3.6 + i * 0.9, Y.ter + 4.25, -17.1, Math.PI / 2, 0, 0), PAL.bronze);
-    // sealed door: deep indigo slab in a stepped frame, bronze seal ring
-    B.stoneClean.add(stoneBlock(3.4, 3.3, 0.5, { chip: 0.1 }), mat4(sx, Y.ter + 2.2, -17.55), tint(0xc0b293));
-    B.trim.add(new THREE.BoxGeometry(2.5, 2.85, 0.3), mat4(sx, Y.ter + 1.93, -17.35), PAL.indigoDeep);
-    B.gold.add(new THREE.TorusGeometry(0.62, 0.07, 6, 24), mat4(sx, Y.ter + 2.1, -17.17), PAL.gold);
-    B.gold.add(new THREE.TorusGeometry(0.3, 0.05, 6, 16), mat4(sx, Y.ter + 2.1, -17.17), PAL.bronze);
-    B.gold.add(new THREE.BoxGeometry(0.06, 2.6, 0.04), mat4(sx, Y.ter + 1.9, -17.18), PAL.bronze);
+    // Monumental shrine: battered façade, deep stepped portal, corbelled crown.
+    const sx = -2, F = -17.6; // façade plane
+    const T0 = Y.ter;
+    // plinth: three steps
+    for (let i = 0; i < 3; i++) {
+      const w = 13 - i * 1.2, d0 = -15.6 - i * 0.5;
+      col.box(sx - w / 2, sx + w / 2, -24, d0, T0, T0 + 0.22 * (i + 1));
+      B.stoneClean.add(stoneBlock(w, 0.24, -24 - d0 > 0 ? 0 : (d0 + 24), { chip: 0.15, bevel: 0.3 }), mat4(sx, T0 + 0.22 * i + 0.11, (d0 - 24) / 2), tint(i === 1 ? 0xbfb193 : PAL.limestone, 0.03));
+    }
+    const P0 = T0 + 0.66;
+    // façade wings (heavy coursing, larger blocks low down)
+    const wall = (from, to, y0, y1, at = F, opts = {}) => masonry({ axis: 'x', at, out: 1, from, to, y0, y1, depth: 0.9, coping: false, colors: [PAL.limeCool, PAL.limestone, 0xa89c82], len: [1.2, 2.4], course: [0.7, 1.0], ...opts });
+    wall(-7.5, -4.1, P0, P0 + 6.2);
+    wall(0.1, 3.5, P0, P0 + 6.2);
+    wall(-4.1, 0.1, P0 + 4.6, P0 + 6.2);
+    masonry({ axis: 'z', at: -7.5, out: -1, from: -23.8, to: F, y0: P0, y1: P0 + 6.2, coping: false, depth: 0.9 });
+    masonry({ axis: 'z', at: 3.5, out: 1, from: -23.8, to: F, y0: P0, y1: P0 + 6.2, coping: false, depth: 0.9 });
+    B.stone.add(new THREE.BoxGeometry(10.6, 6.2, 4.6), mat4(sx, P0 + 3.1, -21.4), PAL.limeDark);
+    col.box(-7.5, -4.1, -24, F, T0, T0 + 14);
+    col.box(0.1, 3.5, -24, F, T0, T0 + 14);
+    col.box(-4.1, 0.1, -24, -18.7, T0, T0 + 14);
+    // stepped portal: three nested frames receding into darkness
+    for (let k = 0; k < 3; k++) {
+      const hw = 2.1 - k * 0.32, top = P0 + 4.6 - k * 0.4, z = F - 0.05 - k * 0.3;
+      B.stoneClean.add(stoneBlock(0.5, top - P0, 0.6, { chip: 0.25 }), mat4(sx - hw + 0.25, (P0 + top) / 2, z), tint(k ? PAL.limeCool : PAL.limestone, 0.04));
+      B.stoneClean.add(stoneBlock(0.5, top - P0, 0.6, { chip: 0.25 }), mat4(sx + hw - 0.25, (P0 + top) / 2, z), tint(k ? PAL.limeCool : PAL.limestone, 0.04));
+      B.stoneClean.add(stoneBlock(hw * 2, 0.55, 0.6, { chip: 0.2 }), mat4(sx, top - 0.27, z), tint(k ? 0xa99d84 : 0xc3b596, 0.04));
+    }
+    // dark interior volume behind the frames (reads as depth, not a painted door)
+    B.trim.add(new THREE.BoxGeometry(3.0, 3.6, 0.2), mat4(sx, P0 + 1.8, -18.75), 0x262b2c);
+    // sealed door slab: deep indigo with bronze seal
+    B.trim.add(stoneBlock(2.3, 3.4, 0.3, { chip: 0.05 }), mat4(sx, P0 + 1.7, -18.55), PAL.indigo);
+    B.gold.add(new THREE.TorusGeometry(0.62, 0.07, 6, 24), mat4(sx, P0 + 2.0, -18.37), PAL.gold);
+    B.gold.add(new THREE.TorusGeometry(0.3, 0.05, 6, 16), mat4(sx, P0 + 2.0, -18.37), PAL.bronze);
+    B.gold.add(new THREE.BoxGeometry(0.06, 2.8, 0.04), mat4(sx, P0 + 1.7, -18.38), PAL.bronze);
+    // relief panel above the portal: indigo field, bronze sun-disc and rays
+    B.trim.add(new THREE.BoxGeometry(3.6, 1.2, 0.14), mat4(sx, P0 + 5.35, F + 0.05), PAL.indigo);
+    B.gold.add(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 14), mat4(sx, P0 + 5.35, F + 0.14, Math.PI / 2, 0, 0), PAL.gold);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; B.gold.add(new THREE.BoxGeometry(0.36, 0.06, 0.05), mat4(sx + Math.cos(a) * 0.62, P0 + 5.35 + Math.sin(a) * 0.42, F + 0.14, 0, 0, a), PAL.bronze); }
+    // cornice + corbelled stepped crown
+    B.stoneClean.add(stoneBlock(11.6, 0.45, 6.8, { chip: 0.3 }), mat4(sx, P0 + 6.42, -20.7), tint(PAL.limestone, 0.03));
+    const crown = [[9.6, 0.7, 5.6], [7.6, 0.7, 4.6], [5.4, 0.75, 3.6], [3.0, 0.8, 2.4]];
+    let cy = P0 + 6.65;
+    crown.forEach(([w, h, d], i) => { B.stoneClean.add(stoneBlock(w, h, d, { chip: 0.35 }), mat4(sx + (i === 3 ? 0.2 : 0), cy + h / 2, -20.8, 0, 0, i === 3 ? 0.05 : 0), tint(i % 2 ? PAL.limeCool : 0xb3a68a, 0.04)); cy += h; });
+    // broken capstone fallen onto the plinth
+    B.stoneClean.add(stoneBlock(1.4, 0.7, 1.1, { chip: 0.6 }), mat4(2.9, T0 + 1.0, -16.6, 0.3, 0.6, 0.4), tint(PAL.limeCool));
+    col.box(2.2, 3.6, -17.2, -16.0, T0, T0 + 1.3);
     // flanking pillars with bronze bands
-    pillar(-5.2, Y.ter + 0.5, -16.6, 3.6, { gold: true, r: 0.36 });
-    pillar(1.2, Y.ter + 0.5, -16.6, 3.6, { gold: true, r: 0.36 });
+    pillar(-6.2, T0 + 0.66, -16.4, 4.0, { gold: true, r: 0.4 });
+    pillar(2.2 - 0.0, T0 + 0.66, -16.4, 2.2, { broken: true, r: 0.4 });
+    // kneeling guardian effigies in shallow niches (foreshadow the enemy)
+    for (const nx of [-5.8, 1.8]) {
+      B.trim.add(new THREE.BoxGeometry(1.2, 2.0, 0.3), mat4(nx, P0 + 1.6, F + 0.02), 0x3b403e);
+      B.stoneClean.add(stoneBlock(0.8, 0.7, 0.5, { chip: 0.3 }), mat4(nx, P0 + 0.95, F + 0.3), tint(PAL.guardian));
+      B.stoneClean.add(stoneBlock(0.5, 0.45, 0.45, { chip: 0.3 }), mat4(nx, P0 + 1.55, F + 0.32), tint(PAL.guardianDark));
+      B.gold.add(new THREE.BoxGeometry(0.3, 0.05, 0.03), mat4(nx, P0 + 1.6, F + 0.56), PAL.bronze);
+    }
+    SHRINE_ROOTS.push([sx - 4.8, P0 + 6.9, -21]);
   }
   // bronze braziers (cold) framing the forecourt
-  for (const x of [-7.8, 3.8]) {
+  for (const x of [-9.4, 5.4]) {
     B.stone.add(stoneBlock(0.8, 0.9, 0.8, { chip: 0.3 }), mat4(x, Y.ter + 0.45, -14.6), tint(PAL.limeCool));
     B.gold.add(new THREE.CylinderGeometry(0.55, 0.3, 0.35, 8, 1, true), mat4(x, Y.ter + 1.07, -14.6), PAL.bronze);
     col.box(x - 0.45, x + 0.45, -15.05, -14.15, Y.ter, Y.ter + 1.3);
@@ -400,15 +437,20 @@ export function buildLevel(scene) {
   {
     const hx = 25.2, hz = -2.8, hy = Y.cy;
     const head = new THREE.Group();
-    const add = (g, x, y, z, c) => { const m = mesh(g, M.stone); m.position.set(x, y, z); head.add(m); setColor(g, c); };
-    add(stoneBlock(2.0, 2.3, 2.0, { chip: 0.3, jitter: 0.12 }), 0, 0, 0, PAL.limeCool);
-    add(stoneBlock(0.5, 0.9, 0.5, { chip: 0.2 }), 0, 0.05, 1.12, PAL.limestone); // nose
-    add(stoneBlock(1.7, 0.18, 0.2, { chip: 0 }), 0, 0.55, 1.02, PAL.limeDark); // brow
-    add(stoneBlock(0.5, 0.12, 0.1, { chip: 0 }), -0.45, 0.33, 1.02, 0x3a3a36); // eyes
-    add(stoneBlock(0.5, 0.12, 0.1, { chip: 0 }), 0.45, 0.33, 1.02, 0x3a3a36);
-    add(stoneBlock(2.3, 0.5, 2.2, { chip: 0.4 }), 0, 1.3, -0.1, PAL.indigo); // headdress band
-    add(stoneBlock(0.8, 0.15, 0.1, { chip: 0 }), 0, -0.55, 1.02, PAL.limeDark); // mouth
-    head.position.set(hx, hy + 0.8, hz); head.rotation.set(0.15, -0.6, 1.25);
+    const add = (g, x, y, z, c, rx = 0) => { const m = mesh(g, M.stone); m.position.set(x, y, z); m.rotation.x = rx; head.add(m); setColor(g, c); };
+    add(stoneBlock(2.1, 2.5, 1.9, { chip: 0.3, jitter: 0.1 }), 0, 0, 0, PAL.limeCool);           // skull mass
+    add(stoneBlock(1.7, 0.9, 0.5, { chip: 0.3 }), 0, -0.85, 0.85, PAL.limeCool);                  // jaw / chin
+    add(stoneBlock(0.42, 0.85, 0.5, { chip: 0.2 }), 0, 0.0, 1.05, PAL.limestone);                 // nose ridge
+    add(stoneBlock(1.95, 0.22, 0.3, { chip: 0.1 }), 0, 0.5, 0.98, PAL.limestone);                 // brow
+    add(stoneBlock(0.55, 0.16, 0.12, { chip: 0 }), -0.5, 0.28, 0.96, 0x45443d);                   // closed eyes
+    add(stoneBlock(0.55, 0.16, 0.12, { chip: 0 }), 0.5, 0.28, 0.96, 0x45443d);
+    add(stoneBlock(0.8, 0.12, 0.12, { chip: 0 }), 0, -0.62, 1.1, 0x5c5a50);                       // mouth line
+    add(stoneBlock(2.3, 0.35, 2.1, { chip: 0.4 }), 0, 1.35, -0.05, PAL.limestone);                // headdress rim
+    add(stoneBlock(1.6, 0.28, 0.12, { chip: 0 }), 0, 1.35, 1.0, PAL.indigo);                      // faded indigo band
+    add(stoneBlock(0.55, 1.4, 0.45, { chip: 0.3 }), -1.2, 0.0, 0.1, PAL.limeCool);                // ear slabs
+    add(stoneBlock(0.55, 1.4, 0.45, { chip: 0.3 }), 1.2, 0.0, 0.1, PAL.limeCool);
+    // lying on its side, face turned up toward the sky/camera, half sunk
+    head.position.set(hx, hy + 0.75, hz); head.rotation.set(-1.0, -0.35, 1.3);
     head.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; } });
     scene.add(head);
     col.box(hx - 1.4, hx + 1.4, hz - 1.4, hz + 1.4, hy, hy + 2.0);
@@ -500,6 +542,13 @@ export function buildLevel(scene) {
   V.shrub(26.8, Y.cy, -10.8, 1.3); V.fern(19, Y.cy, -1.2, 1.0); V.fern(26.8, Y.cy, -6.0, 1.1); V.shrub(18.9, Y.cy, -11, 0.9);
   V.smallTree(25.5, Y.ter, -21.5, 1.3, -0.5);
   V.smallTree(-18, Y.ter, -21, 1.2, 0.6);
+  // a tree grown out of the shrine roof, roots pouring down the façade corner
+  for (const [rx, ry, rz] of SHRINE_ROOTS) {
+    V.smallTree(rx, ry - 0.2, rz, 0.9, 0.5);
+    V.root([[rx, ry, rz], [rx - 0.3, ry, rz + 2.5], [rx - 0.5, ry - 0.6, rz + 3.35], [rx - 0.55, ry - 3.0, rz + 3.5], [rx - 0.4, ry - 6.0, rz + 3.6], [rx - 0.2, ry - 7.0, rz + 4.2]], 0.2, 0.06);
+    V.root([[rx + 0.4, ry, rz], [rx + 1.5, ry, rz + 2.4], [rx + 1.8, ry - 0.7, rz + 3.4], [rx + 2.0, ry - 2.6, rz + 3.5]], 0.16, 0.04);
+    V.vineCurtain(rx - 0.6, rx + 4.0, ry - 0.55, rz + 3.45, 3.4, 1, 1.3);
+  }
   V.shrub(-10.8, Y.ter, -22.8, 1.4); V.shrub(6.5, Y.ter, -23.2, 1.3); V.fern(-8, Y.ter, -17.4, 1.0); V.fern(4.6, Y.ter, -17.6, 1.0);
   V.shrub(12, Y.ter, -22.6, 1.4); V.shrub(18.5, Y.ter, -23.0, 1.2); V.fern(-14, Y.ter, -12.8, 0.9);
   // cliff-top canopies behind the terrace (backdrop masses)

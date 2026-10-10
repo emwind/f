@@ -24,8 +24,8 @@ export const PAL = {
   indigoDeep:  0x2e3350,
   gold:        0xa38645,
   bronze:      0x7d6438,
-  water:       0x4f6e69,
-  waterDeep:   0x2f4b4d,
+  water:       0x506660,
+  waterDeep:   0x2c4143,
   rock:        0x8a8577,
   rockDark:    0x666356,
   // characters
@@ -49,6 +49,7 @@ export const GLOBAL = {
   uTime: { value: 0 },
   uLowTint: { value: new THREE.Color(0x56656a) },   // what deep/low areas drift toward
   uLowRange: { value: new THREE.Vector2(-1.2, 1.6) },
+  uCloud: { value: 0.24 },                            // large soft shade zones (authored value composition)
 };
 
 // 3-band toon ramp with slightly soft transitions (avoids the hard anime edge)
@@ -76,6 +77,7 @@ varying vec3 vWN;
 uniform float uTime;
 uniform vec3 uLowTint;
 uniform vec2 uLowRange;
+uniform float uCloud;
 uniform float uNoiseAmt;
 uniform float uNoiseScale;
 uniform float uMoss;
@@ -126,6 +128,10 @@ export function patchPaintShader(shader) {
         // height falloff: ravine reads cooler & darker (aerial / damp depth cue)
         float hl = smoothstep(uLowRange.x, uLowRange.y, wp.y);
         diffuseColor.rgb = mix(diffuseColor.rgb * uLowTint * 1.35, diffuseColor.rgb, 0.45 + 0.55 * hl);
+        // broad cloud/canopy shade zones: big calm value shapes across the playfield
+        float cl = smoothstep(0.47, 0.6, fbm(vec3(wp.x * 0.05, 0.0, wp.z * 0.065) + vec3(5.0, 1.0, 2.0)));
+        diffuseColor.rgb *= 1.0 - uCloud * cl;
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.92, 0.97, 1.06), uCloud * cl * 1.5);
       }`);
 }
 
