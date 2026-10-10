@@ -117,7 +117,7 @@ function onDebugKey(code) {
   updateHud();
 }
 function applyOutlines() {
-  post.mat.uniforms.uEdge.value = STATE.outlines ? 0.55 : 0;
+  post.mat.uniforms.uEdge.value = STATE.outlines ? 0.7 : 0;
   scene.traverse((o) => { if (o.userData.isHull) o.visible = STATE.outlines; });
 }
 function reset() {

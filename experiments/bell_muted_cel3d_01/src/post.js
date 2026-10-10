@@ -13,7 +13,7 @@ export class Post {
         tColor: { value: this.rt.texture }, tDepth: { value: dt },
         uTexel: { value: new THREE.Vector2(1 / w, 1 / h) },
         uNear: { value: 1 }, uFar: { value: 200 },
-        uEdge: { value: 0.55 }, uEdgeColor: { value: new THREE.Vector3(0.46, 0.41, 0.37) },
+        uEdge: { value: 0.7 }, uEdgeColor: { value: new THREE.Vector3(0.46, 0.41, 0.37) },
         uGrade: { value: 1 },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
@@ -31,7 +31,7 @@ export class Post {
           // silhouette: step in depth (relative); crease: second derivative
           float sil = max(max(abs(l - c), abs(r - c)), max(abs(d - c), abs(u - c))) / c;
           float lap = (abs(l + r - 2.0 * c) + abs(d + u - 2.0 * c)) / c;
-          float e = smoothstep(0.018, 0.05, sil) * 0.9 + smoothstep(0.006, 0.02, lap) * 0.45;
+          float e = smoothstep(0.006, 0.025, sil) * 0.9 + smoothstep(0.0025, 0.009, lap) * 0.5;
           e = clamp(e, 0.0, 1.0) * uEdge;
           // edges fade with distance so far masses stay soft
           e *= 1.0 - smoothstep(38.0, 70.0, c);
