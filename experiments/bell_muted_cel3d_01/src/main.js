@@ -145,7 +145,7 @@ function step(dt, inp) {
   GLOBAL.uTime.value += dt;
   player.update(dt, inp);
   guardian.update(dt, player);
-  if (guardian.alive && player.attacking && player.swingHit(guardian.pos.x, guardian.pos.z, 0.8) && !player.hitList.has(guardian)) {
+  if (guardian.alive && player.attacking && player.swingHit(guardian.pos.x, guardian.pos.z, 1.25) && !player.hitList.has(guardian)) {
     player.hitList.add(guardian);
     guardian.hit(player.pos.x, player.pos.z);
   }

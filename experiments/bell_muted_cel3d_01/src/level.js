@@ -221,7 +221,7 @@ export function buildLevel(scene) {
   // GROUND MASSES
   // =========================================================================
   // south bank (start) and stream
-  core(-24, 28, 9.5, 19, -3, Y.low);
+  core(-24, 28, 9.5, 19, -3, Y.low, 0x8c7a5d);
   col.ramp(-24, 28, 8.5, 9.5, 'z', Y.bed, Y.low);
   B.ground.add(new THREE.BoxGeometry(52, 0.6, 1.2), mat4(2, -0.45, 9.0, -0.66, 0, 0), PAL.dirtDark);
   core(-24, 28, 6, 8.5, -3, Y.bed, PAL.dirtDark, B.bed);
@@ -231,8 +231,8 @@ export function buildLevel(scene) {
   B.ground.add(new THREE.BoxGeometry(34, 0.6, 1.2), mat4(-7, -0.45, 5.5, 0.66, 0, 0), PAL.dirtDark);
   B.ground.add(new THREE.BoxGeometry(10, 0.6, 1.2), mat4(23, -0.45, 5.5, 0.66, 0, 0), PAL.dirtDark);
   // north bank
-  core(-24, 10, 0, 5, -3, Y.low);
-  core(18, 28, 0, 5, -3, Y.low);
+  core(-24, 10, 0, 5, -3, Y.low, 0x86755a);
+  core(18, 28, 0, 5, -3, Y.low, 0x86755a);
   // courtyard + promontory + terrace
   core(-24, 10, -12, 0, -3, Y.cy, 0x8a7d66);
   core(18, 28, -12, 0, -3, Y.cy, 0x8a7d66);
@@ -482,11 +482,32 @@ export function buildLevel(scene) {
   boulder(13.5, Y.bed, -1, 0.9); boulder(16.6, Y.bed, 2.2, 0.7); boulder(11.4, Y.bed, -9.5, 0.8);
   boulder(24, 0, 12, 1.3); boulder(26, 0, 15.5, 1.6);
 
+  // remnant processional path on the south bank (gate → crossing), mostly lost
+  pave(-13, -1.5, 10.0, 12.6, 0, { size: 1.25, loss: 0.8, missing: 0.15, tilt: 0.04 });
+  pave(-6.5, -1.5, 12.6, 17.5, 0, { size: 1.25, loss: 0.9, missing: 0.25, tilt: 0.04 });
+  for (const [x, z, ry] of [[6.2, 15.4, 0.3], [7.3, 15.9, 1.2]]) B.stoneClean.add(new THREE.CylinderGeometry(0.42, 0.42, 0.85, 10), mat4(x, 0.38, z, 0, ry, Math.PI / 2 + 0.05), tint(PAL.limestone));
+  col.box(5.6, 7.9, 15, 16.4, -1, 0.75);
+
+  // stream banks: limestone slabs, rocks and overhanging growth break the straight edges
+  for (const [zEdge, dir] of [[5.4, 1], [9.1, -1]]) {
+    for (let x = -23; x < 27; x += rr(1.4, 3.2)) {
+      if (x > 9.6 && x < 18.4 && dir > 0) continue; // gorge mouth stays open
+      if (x > -5.5 && x < -1.8) continue;          // the crossing stays readable
+      const k = R();
+      if (k < 0.45) {
+        const w = rr(0.9, 1.8);
+        B.rock.add(stoneBlock(w, rr(0.3, 0.55), rr(0.7, 1.2), { jitter: 0.08, chip: 0.5 }), mat4(x, -0.25, zEdge + dir * rr(0.1, 0.5), rr(-0.15, 0.15), rr(-0.4, 0.4), rr(-0.12, 0.12)), tint(R() < 0.5 ? PAL.limeCool : PAL.rock, 0.06));
+      } else if (k < 0.75) {
+        V.fern(x, -0.15, zEdge + dir * 0.2, rr(0.7, 1.0), R() < 0.5 ? PAL.leafOlive : PAL.leaf);
+      } else {
+        V.shrub(x, -0.35, zEdge - dir * 0.25, rr(0.55, 0.8), { color: PAL.leafOlive, dark: PAL.leafDark, flat: 0.5 });
+      }
+    }
+  }
+
   // ground zones: moss beds, damp dark soil by water, dirt path
-  patch(-9, 0, 15, 3.5, PAL.mossDark, { squash: 0.5 });
   patch(-17, 0, 13.5, 3.2, PAL.moss);
   patch(3, 0, 16, 3.0, PAL.moss, { squash: 0.6 });
-  patch(14, 0, 14, 4.0, PAL.mossDark, { squash: 0.5 });
   patch(-6.5, 0, 11.6, 2.2, 0x6c5c46, { squash: 0.55 }); // trodden path toward the crossing
   patch(-3.5, 0, 10.8, 1.8, 0x6c5c46, { squash: 0.6 });
   patch(-14, 0, 2.6, 2.6, PAL.mossDark, { squash: 0.6 });
@@ -527,8 +548,8 @@ export function buildLevel(scene) {
   // stream bank reeds & shrubs
   for (const [x, z] of [[-21, 5.4], [-16, 5.2], [-9.5, 5.3], [3.5, 5.4], [7.5, 5.2], [-12, 9.6], [-0.5, 9.7], [5.5, 9.6], [21, 9.5], [25, 5.3]]) V.reeds(x, -0.1, z, rr(0.8, 1.1));
   // south bank groups (calm areas left open on the path)
-  V.shrub(-18.5, 0, 9.8, 1.3); V.shrub(-15.6, 0, 16.8, 1.5); V.fern(-14.5, 0, 14.5, 1.2);
-  V.shrub(2.5, 0, 12.4, 1.0); V.fern(4.2, 0, 11.4, 1.0); V.shrub(10, 0, 16.5, 1.6); V.fern(12, 0, 11.2, 1.2);
+  V.shrub(-18.5, 0, 9.8, 1.3, { color: PAL.leafOlive }); V.shrub(-15.6, 0, 16.8, 1.5); V.fern(-14.5, 0, 14.5, 1.2);
+  V.shrub(2.5, 0, 12.4, 1.0, { color: PAL.leafOlive }); V.fern(4.2, 0, 11.4, 1.0); V.shrub(10, 0, 16.5, 1.6); V.fern(12, 0, 11.2, 1.2);
   V.smallTree(-21.5, 0, 14.5, 1.2, 0.5);
   V.smallTree(20.5, 0, 14.2, 1.1, -0.4);
   // foreground framing masses (near the camera, dark)

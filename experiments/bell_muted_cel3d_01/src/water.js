@@ -36,10 +36,10 @@ function waterMaterial({ flow = new THREE.Vector2(1, 0), speed = 0.35 } = {}) {
           // slow large-scale tonal drift
           c *= 0.94 + 0.1 * wn(q * vec2(0.18, 0.5) - vec2(t * 0.6, 0.0));
           // sparse elongated highlight dashes drifting with the flow
-          float h = wn(q * vec2(0.9, 5.0) - vec2(t * 2.2, 0.0));
+          float h = wn(q * vec2(0.7, 7.0) - vec2(t * 2.2, 0.0));
           float h2 = wn(q * vec2(0.35, 1.6) + vec2(-t, 3.0));
-          float dash = smoothstep(0.80, 0.86, h) * smoothstep(0.45, 0.65, h2);
-          c = mix(c, uFoam, dash * 0.55);
+          float dash = smoothstep(0.84, 0.88, h) * smoothstep(0.5, 0.7, h2);
+          c = mix(c, uFoam, dash * 0.38);
           // shoreline band (wobbling)
           float shore = 1.0 - smoothstep(0.05, 0.14 + 0.04 * sin(q.x * 1.3 + t * 3.0), vDepth);
           c = mix(c, uFoam * 0.92, shore * 0.6);

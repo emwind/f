@@ -26,16 +26,18 @@ function gMat(color, moss = 0.6) {
   return m;
 }
 
-function blk(w, h, d, mat, parent, x, y, z, chip = 0.25) {
-  const g = stoneBlock(w, h, d, { jitter: 0.05, chip });
+function blk(w, h, d, mat, parent, x, y, z, chip = 0.25, mossy = false) {
+  const g = stoneBlock(w, h, d, { jitter: 0.05, chip, bevel: 0.16 });
   g.computeVertexNormals();
   // moss baked into vertex colour on up-facing faces (object space, so it never swims)
   const n = g.attributes.position.count, nor = g.attributes.normal, c = new Float32Array(n * 3);
   const base = mat.color, moss = new THREE.Color(PAL.moss);
-  const amt = mat.userData.mossAmt ?? 0;
+  const pos = g.attributes.position;
   for (let i = 0; i < n; i++) {
-    const up = nor.getY(i) > 0.6 && amt > 0.3;
-    c.set(up ? [moss.r / base.r, moss.g / base.g, moss.b / base.b] : [1, 1, 1], i * 3);
+    const up = mossy && nor.getY(i) > 0.6;
+    // weathering: lower half of every block a little darker (age, grime)
+    const k = 0.9 + 0.1 * Math.min(1, Math.max(0, pos.getY(i) / h + 0.5));
+    c.set(up ? [moss.r / base.r, moss.g / base.g, moss.b / base.b] : [k, k, k], i * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(c, 3));
   const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true;
@@ -54,32 +56,37 @@ export class Guardian {
     const root = new THREE.Group(); this.root = root;
     const r = {};
     r.body = new THREE.Group(); root.add(r.body);
-    r.pelvis = blk(0.95, 0.45, 0.65, D, r.body, 0, 0.95, 0);
+    r.pelvis = blk(0.95, 0.45, 0.7, D, r.body, 0, 0.95, 0);
+    blk(0.6, 0.55, 0.08, I, r.body, 0, 0.62, 0.36, 0.1);                  // indigo stone apron
     r.torso = new THREE.Group(); r.torso.position.set(0, 1.15, 0); r.body.add(r.torso);
-    blk(1.25, 0.95, 0.8, S, r.torso, 0, 0.5, 0, 0.35);
-    blk(0.9, 0.4, 0.06, I, r.torso, 0, 0.52, 0.41, 0); // carved indigo chest band
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 8), G); disc.rotation.x = Math.PI / 2; disc.position.set(0, 0.52, 0.45);
+    blk(1.05, 0.55, 0.75, S, r.torso, 0, 0.27, 0, 0.3);                   // waist
+    blk(1.45, 0.62, 0.9, S, r.torso, 0, 0.82, -0.02, 0.35);               // broad chest
+    blk(1.0, 0.16, 0.08, I, r.torso, 0, 0.76, 0.45, 0);                   // carved chest band
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 10), G); disc.rotation.x = Math.PI / 2; disc.position.set(0, 0.76, 0.5);
     disc.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(disc.geometry.attributes.position.count * 3).fill(1), 3));
     r.torso.add(disc);
-    r.head = new THREE.Group(); r.head.position.set(0, 1.05, 0.05); r.torso.add(r.head);
-    blk(0.55, 0.5, 0.55, S, r.head, 0, 0.2, 0, 0.3);
-    blk(0.68, 0.12, 0.62, D, r.head, 0, 0.47, 0, 0.3); // brow cap
+    r.head = new THREE.Group(); r.head.position.set(0, 1.18, 0.12); r.torso.add(r.head);
+    blk(0.62, 0.55, 0.55, S, r.head, 0, 0.18, 0, 0.3);                    // head block
+    blk(0.74, 0.2, 0.66, D, r.head, 0, 0.52, -0.02, 0.35, true);          // mossy crown slab
+    for (const sx of [-1, 1]) blk(0.14, 0.4, 0.2, D, r.head, sx * 0.3, 0.75, -0.05, 0.3); // crown tabs
+    blk(0.5, 0.2, 0.08, D, r.head, 0, 0.3, 0.29, 0.1);                    // brow ridge over the eye slit
     this.eyeMat = new THREE.MeshBasicMaterial({ color: 0x5a4a2c });
-    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 0.04), this.eyeMat); eye.position.set(0, 0.24, 0.28); r.head.add(eye);
-    for (const s of [-1, 1]) {
-      const sh = new THREE.Group(); sh.position.set(s * 0.8, 0.8, 0); r.torso.add(sh);
-      blk(0.55, 0.42, 0.7, D, sh, s * 0.05, 0.05, 0, 0.4); // pauldron (mossy top)
-      blk(0.36, 0.55, 0.4, S, sh, 0, -0.38, 0);
-      const fo = new THREE.Group(); fo.position.set(0, -0.68, 0); sh.add(fo);
-      blk(0.32, 0.45, 0.36, S, fo, 0, -0.18, 0);
-      blk(0.5, 0.45, 0.5, D, fo, 0, -0.6, 0.02, 0.35); // fist
-      r[s < 0 ? 'shL' : 'shR'] = sh; r[s < 0 ? 'foL' : 'foR'] = fo;
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.055, 0.04), this.eyeMat); eye.position.set(0, 0.17, 0.29); eye.userData.noHull = true; r.head.add(eye);
+    for (const s2 of [-1, 1]) {
+      const sh = new THREE.Group(); sh.position.set(s2 * 0.88, 0.85, 0); r.torso.add(sh);
+      blk(0.62, 0.42, 0.78, D, sh, s2 * 0.06, 0.08, 0, 0.45, true);       // pauldron (mossy top)
+      blk(0.38, 0.62, 0.42, S, sh, 0, -0.4, 0);
+      const fo = new THREE.Group(); fo.position.set(0, -0.74, 0); sh.add(fo);
+      blk(0.34, 0.5, 0.38, S, fo, 0, -0.2, 0);
+      blk(0.56, 0.5, 0.54, D, fo, 0, -0.66, 0.02, 0.35);                  // heavy fist
+      blk(0.6, 0.08, 0.58, G, fo, 0, -0.38, 0.02, 0);                     // bronze cuff
+      r[s2 < 0 ? 'shL' : 'shR'] = sh; r[s2 < 0 ? 'foL' : 'foR'] = fo;
     }
-    for (const s of [-1, 1]) {
-      const lg = new THREE.Group(); lg.position.set(s * 0.32, 0.85, 0); r.body.add(lg);
-      blk(0.36, 0.5, 0.42, S, lg, 0, -0.25, 0);
-      blk(0.44, 0.38, 0.6, D, lg, 0, -0.66, 0.06);
-      r[s < 0 ? 'lgL' : 'lgR'] = lg;
+    for (const s2 of [-1, 1]) {
+      const lg = new THREE.Group(); lg.position.set(s2 * 0.32, 0.85, 0); r.body.add(lg);
+      blk(0.38, 0.5, 0.44, S, lg, 0, -0.25, 0);
+      blk(0.48, 0.38, 0.64, D, lg, 0, -0.66, 0.06);
+      r[s2 < 0 ? 'lgL' : 'lgR'] = lg;
     }
     addHull(root, 1.25);
     this.r = r;
