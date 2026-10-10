@@ -1,0 +1,10 @@
+{
+  "name": "bell-muted-cel3d-01",
+  "private": true,
+  "type": "module",
+  "description": "Bell visual hypothesis: fully 3D muted cel-shaded action-adventure (no build step, plain ES modules + vendored three.js r170)",
+  "scripts": {
+    "start": "npx --yes http-server -p 8090 -c-1 .",
+    "shots": "node tools/capture.mjs"
+  }
+}

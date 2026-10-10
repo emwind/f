@@ -1,0 +1,170 @@
+import * as THREE from '../vendor/three.module.min.js';
+import { Batch, R, rr, rng, mat4, tubeGeom, rockGeom } from './geom.js';
+import { PAL } from './materials.js';
+
+// Vegetation is accumulated into shared batches (one draw call per material)
+export const VEG = {
+  leaf: new Batch(),   // canopy / shrubs (spherical normals → big readable masses)
+  frond: new Batch(),  // ferns, reeds, vines leaves (double sided)
+  wood: new Batch(),   // trunks, branches, roots
+};
+
+const _v = new THREE.Vector3();
+
+// A canopy clump: several overlapping squashed blobs whose normals point away
+// from the clump centre, so toon bands read as one painted mass, not facets.
+export function clump(cx, cy, cz, size, { color = PAL.leaf, dark = PAL.leafDark, flat = 0.62, n = 7, droop = 0.25 } = {}) {
+  const blobs = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rr(-0.4, 0.4);
+    const d = i === 0 ? 0 : size * rr(0.35, 0.7);
+    blobs.push([cx + Math.cos(a) * d, cy + rr(-0.15, 0.25) * size - (d / size) * droop * size, cz + Math.sin(a) * d * 0.85, size * rr(0.5, 0.75) * (i === 0 ? 1.15 : 1)]);
+  }
+  for (const [x, y, z, r] of blobs) {
+    const g = rockGeom(r, { flat, detail: 2, jag: 0.1 });
+    g.translate(x, y, z);
+    const g2 = g.index ? g.toNonIndexed() : g;
+    const p = g2.attributes.position;
+    const nor = new Float32Array(p.count * 3), col = new Float32Array(p.count * 3);
+    const cA = new THREE.Color(color), cB = new THREE.Color(dark), c = new THREE.Color();
+    g2.computeVertexNormals();
+    const fn = g2.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      _v.set(p.getX(i) - cx, (p.getY(i) - cy) * 1.6, p.getZ(i) - cz).normalize();
+      // mostly spherical, a little of the facet normal for broken-up edges
+      _v.multiplyScalar(0.78).add(new THREE.Vector3(fn.getX(i), fn.getY(i), fn.getZ(i)).multiplyScalar(0.22)).normalize();
+      nor.set([_v.x, _v.y, _v.z], i * 3);
+      // underside of the mass darker & cooler (painted occlusion)
+      const t = THREE.MathUtils.smoothstep(p.getY(i) - cy, -size * 0.5, size * 0.35);
+      c.copy(cB).lerp(cA, t);
+      col.set([c.r, c.g, c.b], i * 3);
+    }
+    g2.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g2.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    VEG.leaf.add(g2, null, 0xffffff, { keepNormals: true });
+    g.dispose();
+  }
+}
+
+// Shrub = low clump hugging the ground
+export function shrub(x, y, z, s = 1, opts = {}) {
+  clump(x, y + 0.45 * s, z, 0.95 * s, { flat: 0.55, n: 4, droop: 0.05, ...opts });
+}
+
+// Branch: tapered tube along points
+export function branch(points, r0, r1, color = PAL.bark) {
+  VEG.wood.add(tubeGeom(points, r0, r1, 7, Math.max(6, points.length * 3)), null, color);
+}
+
+// Fern: fan of arched tapered fronds
+export function fern(x, y, z, s = 1, color = PAL.leafOlive) {
+  const n = 7 + ((R() * 4) | 0);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rr(-0.3, 0.3);
+    const L = s * rr(0.7, 1.05), W = s * 0.16;
+    const segs = 5, g = new THREE.BufferGeometry();
+    const pos = [];
+    const pt = (t, side) => {
+      const r = t * L, h = Math.sin(t * Math.PI * 0.85) * L * 0.42 - t * t * L * 0.12;
+      const w = W * Math.sin(Math.PI * Math.min(1, t * 1.05 + 0.02)) * (1 - t * 0.5) * side;
+      return [Math.cos(a) * r - Math.sin(a) * w, h, Math.sin(a) * r + Math.cos(a) * w];
+    };
+    for (let k = 0; k < segs; k++) {
+      const t0 = k / segs, t1 = (k + 1) / segs;
+      const a0 = pt(t0, -1), b0 = pt(t0, 1), a1 = pt(t1, -1), b1 = pt(t1, 1);
+      // slight crease along the spine
+      const m0 = pt(t0, 0), m1 = pt(t1, 0); m0[1] += 0.03 * s; m1[1] += 0.03 * s;
+      pos.push(...a0, ...m0, ...a1, ...m0, ...m1, ...a1, ...m0, ...b0, ...m1, ...b0, ...b1, ...m1);
+    }
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const shade = new THREE.Color(color).multiplyScalar(rr(0.85, 1.05));
+    VEG.frond.add(g, mat4(x, y, z), shade);
+  }
+}
+
+// Reeds: thin tapered blades in a cluster
+export function reeds(x, y, z, s = 1) {
+  const n = 9 + ((R() * 6) | 0);
+  for (let i = 0; i < n; i++) {
+    const h = s * rr(0.8, 1.5);
+    const g = new THREE.ConeGeometry(0.04 * s, h, 3, 1);
+    g.translate(0, h / 2, 0);
+    const c = new THREE.Color(R() < 0.3 ? PAL.dirt : PAL.leafOlive).multiplyScalar(rr(0.8, 1.05));
+    VEG.frond.add(g, mat4(x + rr(-0.4, 0.4) * s, y, z + rr(-0.3, 0.3) * s, rr(-0.25, 0.25), 0, rr(-0.25, 0.25)), c);
+  }
+}
+
+// Hanging vine: a few thin tubes with sparse leaf blobs
+export function vine(x, y, z, len, nx = 0, nz = 1, s = 1) {
+  const pts = [];
+  const steps = 6;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    pts.push([x + nx * (0.08 + Math.sin(t * 5 + x) * 0.05) + rr(-0.1, 0.1) * t, y - t * len, z + nz * (0.08 + Math.sin(t * 4 + z) * 0.05) + rr(-0.1, 0.1) * t]);
+  }
+  VEG.wood.add(tubeGeom(pts, 0.035 * s, 0.02 * s, 4, 12), null, PAL.leafDark);
+  // leaves: small flattened elongated pads hugging the wall, denser near the top
+  for (let i = 0; i < steps * 2; i++) {
+    const t = Math.pow(R(), 1.6) * 0.95;
+    const k = Math.min(steps - 1, Math.floor(t * steps)), f = t * steps - k;
+    const px = pts[k][0] + (pts[k + 1][0] - pts[k][0]) * f, py = pts[k][1] + (pts[k + 1][1] - pts[k][1]) * f, pz = pts[k][2] + (pts[k + 1][2] - pts[k][2]) * f;
+    const g = rockGeom(0.13 * s * rr(0.8, 1.3), { flat: 1, detail: 1, jag: 0.15 });
+    VEG.frond.add(g, mat4(px + nx * 0.06 + rr(-0.1, 0.1), py, pz + nz * 0.06, 0, 0, rr(-0.6, 0.6), 0.9, 1.7, 0.45), R() < 0.5 ? PAL.leafDark : PAL.leaf);
+  }
+}
+
+// Vine curtain draped over a wall top (along x at z, facing +z by default)
+export function vineCurtain(x0, x1, yTop, z, len, nz = 1, density = 1.6) {
+  const n = Math.max(2, Math.round((x1 - x0) * density));
+  for (let i = 0; i < n; i++) vine(x0 + (x1 - x0) * (i + R() * 0.6) / n, yTop, z, len * rr(0.45, 1), 0, nz);
+  // a moss/leaf lip along the top edge so vines grow from something
+  for (let x = x0; x < x1; x += rr(0.9, 1.5)) clump(x, yTop + 0.02, z - nz * 0.1, rr(0.3, 0.45), { flat: 0.35, n: 3, color: PAL.leafOlive, dark: PAL.leafDark });
+}
+
+// Roots: thick snaking tubes spreading from a trunk base across the ground
+export function root(points, r0 = 0.22, r1 = 0.05) {
+  VEG.wood.add(tubeGeom(points, r0, r1, 6, points.length * 4), null, PAL.root);
+}
+
+// The large tree: asymmetric leaning trunk, a few major limbs, few big canopy masses.
+export function bigTree(x, y, z) {
+  const T = (pts, r0, r1) => branch(pts.map(([a, b, c]) => [x + a, y + b, z + c]), r0, r1, PAL.bark);
+  // trunk leans toward the courtyard (+x, slightly +z)
+  T([[0, -0.3, 0], [0.2, 1.5, 0.1], [0.7, 3.2, 0.3], [1.3, 4.6, 0.4]], 0.85, 0.5);
+  // buttress flare
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2 + 0.3;
+    T([[Math.cos(a) * 0.3, 1.4, Math.sin(a) * 0.3], [Math.cos(a) * 0.8, 0.4, Math.sin(a) * 0.8], [Math.cos(a) * 1.3, -0.1, Math.sin(a) * 1.3]], 0.42, 0.18);
+  }
+  // major limbs
+  T([[1.2, 4.4, 0.4], [3.0, 5.6, 0.9], [5.2, 6.1, 1.6], [6.6, 6.0, 2.4]], 0.42, 0.14);
+  T([[1.1, 4.3, 0.3], [0.6, 6.2, -0.8], [0.9, 7.6, -1.8]], 0.4, 0.15);
+  T([[1.0, 4.0, 0.4], [-0.8, 5.3, 1.0], [-2.2, 6.0, 1.4]], 0.32, 0.1);
+  T([[2.6, 5.4, 0.8], [3.4, 6.8, -0.4], [4.0, 7.6, -1.0]], 0.22, 0.08);
+  // canopy: a few large asymmetric masses, heaviest over the courtyard side
+  const C = (a, b, c, s, o = {}) => clump(x + a, y + b, z + c, s, o);
+  C(5.6, 6.6, 1.9, 2.2, { n: 6 });
+  C(3.4, 7.9, -0.6, 2.4, { n: 6, color: PAL.leafOlive });
+  C(0.8, 8.5, -1.9, 2.3, { n: 6 });
+  C(-1.9, 6.7, 1.2, 1.8, { n: 5, color: PAL.leaf });
+  C(1.6, 6.4, 1.6, 1.6, { n: 4, color: PAL.leafDark, dark: 0x27342a });
+}
+
+// A slimmer secondary tree
+export function smallTree(x, y, z, s = 1, lean = 0.3) {
+  const T = (pts, r0, r1) => branch(pts.map(([a, b, c]) => [x + a * s, y + b * s, z + c * s]), r0 * s, r1 * s, PAL.bark);
+  T([[0, -0.2, 0], [lean * 0.5, 1.8, 0], [lean, 3.4, 0.2], [lean * 1.6, 4.6, 0.1]], 0.35, 0.16);
+  T([[lean, 3.2, 0.2], [lean + 1.2, 4.0, 0.6], [lean + 1.9, 4.4, 0.9]], 0.16, 0.06);
+  clump(x + (lean * 1.6) * s, y + 5.1 * s, z, 1.5 * s, { n: 5, color: PAL.leafOlive });
+  clump(x + (lean + 1.8) * s, y + 4.5 * s, z + 0.8 * s, 1.0 * s, { n: 4 });
+}
+
+export function buildVegMeshes(mats) {
+  const out = [];
+  const mk = (b, m, cast = true) => { if (b.empty) return; const me = new THREE.Mesh(b.build(), m); me.castShadow = cast; me.receiveShadow = true; out.push(me); };
+  mk(VEG.leaf, mats.leaf);
+  mk(VEG.frond, mats.frond);
+  mk(VEG.wood, mats.wood);
+  return out;
+}
+void rng;

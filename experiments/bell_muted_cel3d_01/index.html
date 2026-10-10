@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bell · Muted Cel 3D · 01</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d1b; font: 12px/1.45 Georgia, 'Times New Roman', serif; color: #d9d2bf; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 18px; top: 16px; display: flex; gap: 6px; }
+  #hud i { width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid #c9b787; background: transparent; opacity: .75; }
+  #hud i.on { background: #a8774b; border-color: #d8c391; opacity: 1; }
+  #help { position: fixed; right: 14px; bottom: 12px; background: rgba(26,28,26,.62); padding: 8px 11px; border-left: 2px solid #8c7748; max-width: 330px; letter-spacing: .02em; }
+  #help.hide { display: none; }
+  #help b { color: #e4d7b3; font-weight: normal; }
+  #dbg, #perf { color: #b9b3a2; opacity: .85; }
+  #perf { position: fixed; left: 18px; bottom: 10px; font-size: 11px; opacity: .55; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="help">
+  <div><b>WASD / arrows</b> move · <b>Space</b> jump · <b>J / X / click</b> strike · <b>Shift / K</b> dash</div>
+  <div><b>T</b> toon/smooth · <b>O</b> edges · <b>P</b> shadows · <b>G</b> grade · <b>1–4</b> pitch · <b>[ ]</b> distance · <b>- =</b> fov · <b>R</b> reset · <b>H</b> hide</div>
+  <div id="dbg"></div>
+</div>
+<div id="perf"></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
