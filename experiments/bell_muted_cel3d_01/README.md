@@ -175,3 +175,16 @@ low-poly indie 3D. The next test should be surface authoring on the ground and w
 hero props.
 
 See `docs/RESUME_MUTED_CEL3D.md` for the full handoff.
+
+## Final deciding test: authored large surfaces
+
+This test changed only the courtyard paving and the main retaining wall. Both are now
+hand-designed painted surfaces (`src/surfaces.js`). The URL flag `?surf=none|paving|wall|both`
+switches between the earlier procedural treatment and the painted one. The captures are in
+`docs/screenshots/final/`: before, paving only, wall only, combined, and a grayscale comparison.
+
+**Result.** The floor now reads as drawn, but the frame still reads as clean 3D. The wall change
+only shows up close. Paving made the larger difference.
+
+**Recommendation.** Stop full-3D muted Bell as the primary visual direction. Keep its camera,
+readability and motif lessons as reference for the hybrid or sprite direction.

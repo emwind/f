@@ -18,9 +18,9 @@ const C = {
   lit: 'rgba(236,226,198,0.38)', shade: 'rgba(70,60,48,0.42)',
   moss: '#646a40', mossDark: '#4b5135', mossLight: '#7a7d4c',
   damp: 'rgba(52,62,60,0.38)', stain: 'rgba(48,52,46,0.42)',
-  wall: ['#a89c84', '#9e9580', '#b2a68b', '#968f7d', '#aaa088'],
-  wallLow: ['#857e6f', '#7c776a', '#8b8473'],
-  mortar: '#5b5246', crack: '#2e2a25',
+  wall: ['#b4a88e', '#aaa18a', '#bdb194', '#a29a86', '#b6ab91'],
+  wallLow: ['#958d7c', '#8b8576', '#9a927f'],
+  mortar: '#4f473d', crack: '#2e2a25',
 };
 
 function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; }
@@ -265,14 +265,14 @@ export function paintWall(renderer, seg, seed) {
   {
     const pts = []; let x = crack, y = WY1;
     while (y > 0.5) { pts.push(P(x, y)); y -= 0.22 + R() * 0.2; x += (R() - 0.5) * 0.35; }
-    crackLine(ctx, pts, 4);
+    crackLine(ctx, pts, 6);
   }
   // damp: dark wash rising from the foot with an irregular tide line, plus vertical runs
   ctx.save();
   ctx.beginPath(); ctx.moveTo(0, H);
   for (let x = 0; x <= W; x += 24) ctx.lineTo(x, H - (0.85 + 0.35 * Math.sin(x * 0.011) + 0.2 * Math.sin(x * 0.037)) * WK);
   ctx.lineTo(W, H); ctx.closePath();
-  const dg = ctx.createLinearGradient(0, H - 1.4 * WK, 0, H); dg.addColorStop(0, 'rgba(44,52,50,0.05)'); dg.addColorStop(1, 'rgba(40,48,46,0.5)');
+  const dg = ctx.createLinearGradient(0, H - 1.4 * WK, 0, H); dg.addColorStop(0, 'rgba(44,52,50,0.05)'); dg.addColorStop(1, 'rgba(40,48,46,0.4)');
   ctx.fillStyle = dg; ctx.fill(); ctx.restore();
   const runs = seg.x0 < -10 ? [[-20.6, 2.6], [-18.9, 3.0], [-16.8, 1.8], [-13.6, 3.0], [-13.0, 1.2], [-8.4, 1.6]] : [[7.2, 2.2], [8.6, 2.6], [2.2, 1.3]];
   for (const [rx, len] of runs) {

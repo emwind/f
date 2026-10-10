@@ -1,6 +1,6 @@
 # RESUME — bell_muted_cel3d_01
 
-## FINAL DECIDING TEST — authored large surfaces (in progress; read first)
+## FINAL DECIDING TEST — authored large surfaces (COMPLETE — direction recommended to STOP)
 Scope: ONLY the courtyard paving and the main retaining wall (benchmark view). Nothing else may change.
 Mechanism: `src/surfaces.js` (new) paints each surface once into a canvas (hand-designed 2D
 illustration: authored stone layout + zones) mapped onto one plane with a plain MeshToonMaterial
@@ -18,7 +18,31 @@ Captures: `SET=final NODE_PATH=$(npm root -g) node tools/capture.mjs` → `docs/
   slabs. Old courtyard `pave()` calls + 3 courtyard ground patches are skipped when painted.
   Material tone e2e0dc to sit with the world. Shot: `final/01-paving-only.jpg`.
   Read: noticeably more drawn/authored; centre still slightly regular in its course rows.
-- **Stage 2 wall — NEXT.**
+- **Stage 2 wall — DONE.** `paintWall()` per segment (x −24..−6.6 and 0.6..10): authored course
+  rhythm (tall buried footing, alternating tall/short courses), through-stones spanning two
+  courses, rounded/broken stone corners, darker lower courses, a rubble repair patch
+  (x −18.4..−15.6) in lighter stone, a large zig-zag crack (x −9.6 / 5.4) with slumped stones
+  east of it, damp tide line from the foot, vertical stain runs under vines/roots/panel, moss under
+  the coping, in the damp foot and along the crack. Coping lip kept (masonry `noBlocks`);
+  `WALL_RELIEF`: 6 protruding stones + broken quoins at the gorge corner and stair cheek.
+  Shots: `final/02-wall-only.jpg`, close check `final/05-combined-closer.jpg`.
+- **Combined:** `final/03-final-combined.jpg`; `final/cmp-before-vs-final.jpg` (before above);
+  `final/04-value-grayscale-before-vs-final.jpg`.
+
+### Final verdict
+1. The benchmark does **not** materially stop reading as generic low-poly indie 3D. The floor reads
+   more drawn/authored, but as "a nicely textured game floor" inside the same clean 3D frame; the
+   wall change is only legible close up — at 42°/30 m it is a darker band either way.
+2. Paving made the larger difference (it is ~35% of the frame and faces the light); the wall is
+   foreshortened and sits in the mid toon band.
+3. Full-3D muted Bell does **not** yet deserve a Godot proof on visual grounds.
+4. **Recommendation: stop this direction** as Bell's primary visual path. Keep what it proved
+   (camera grammar, elevation readability, muted palette, sanctuary motif language, guardian /
+   shrine / tree design ideas) as reference for the hybrid/sprite direction. Reaching the target
+   identity in full 3D would need a real art-production pipeline (hand-modelled + hand-painted
+   assets for everything on screen), which is a staffing decision, not a further prototype step.
+No further work is planned in this experiment.
+
 
 
 ## HERO-ASSET REFINEMENT PASS (complete — read this first)
