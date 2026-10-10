@@ -3,6 +3,7 @@ import { Batch, R, rr, mat4, mesh, stoneBlock, rockGeom, noise3 } from './geom.j
 import { PAL, paintMat } from './materials.js';
 import { Collider } from './collision.js';
 import * as V from './vegetation.js';
+import { paintFloor, paintWall, FLOOR_RELIEF, WALL_SEGMENTS, WALL_RELIEF } from './surfaces.js';
 
 // ---------------------------------------------------------------------------
 // Layout (metres). x east, z south (toward camera), y up.
@@ -19,7 +20,13 @@ export const SPAWN = { x: -9, z: 14 };
 export const SHRINE_DOOR = { x: -2, y: 6.66, z: -18.8 };
 const SHRINE_ROOTS = [];
 
-export function buildLevel(scene) {
+// Final deciding test: ?surf=none|paving|wall|both (default both) selects the
+// authored painted surfaces vs the earlier procedural treatment, for A/B captures.
+const SURF = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('surf')) || 'both';
+const PAINT_FLOOR = SURF === 'both' || SURF === 'paving';
+const PAINT_WALL = SURF === 'both' || SURF === 'wall';
+
+export function buildLevel(scene, renderer) {
   const col = new Collider();
   const B = {
     stone: new Batch(), stoneClean: new Batch(), ground: new Batch(), paving: new Batch(),
@@ -54,8 +61,8 @@ export function buildLevel(scene) {
   // ---- masonry face: courses of irregular blocks on one side of a mass ----
   // axis 'x' → face runs along x at z=at, outward normal (0,0,out)
   function masonry({ axis, at, out, from, to, y0, y1, depth = 0.7, course = [0.55, 0.85], len = [0.9, 2.0],
-    colors = stoneCols, ruin = 0, coping = true, batch = B.stone, chip = 0.2 }) {
-    let y = y0;
+    colors = stoneCols, ruin = 0, coping = true, batch = B.stone, chip = 0.2, noBlocks = false }) {
+    let y = noBlocks ? y1 : y0;
     const ruinPhase = R() * 10;
     while (y < y1 - 0.05) {
       const h = Math.min(y1 - y, rr(course[0], course[1]));
@@ -277,8 +284,18 @@ export function buildLevel(scene) {
   col.box(-34, 38, 19, 22, -3, 12); // invisible south bound
 
   // retaining wall: courtyard south face (the main drop)
-  masonry({ axis: 'x', at: 0, out: 1, from: -24, to: -6.6, y0: -0.4, y1: Y.cy, course: [0.6, 0.95], len: [1.1, 2.3] });
-  masonry({ axis: 'x', at: 0, out: 1, from: 0.6, to: 10, y0: -0.4, y1: Y.cy, course: [0.6, 0.95], len: [1.1, 2.3] });
+  if (PAINT_WALL) {
+    // authored painted face + coping lip + a few authored relief stones / broken quoins
+    for (const [i, seg] of WALL_SEGMENTS.entries()) {
+      scene.userData.surfaces = scene.userData.surfaces || [];
+      scene.userData.surfaces.push(paintWall(renderer, seg, 900 + i * 17));
+      masonry({ axis: 'x', at: 0, out: 1, from: seg.x0, to: seg.x1, y0: -0.4, y1: Y.cy, noBlocks: true });
+    }
+    for (const [x, y, w, h, d, rz, c] of WALL_RELIEF) B.stoneClean.add(stoneBlock(w, h, d + 0.2, { jitter: 0.04, chip: 0.5, bevel: 0.1 }), mat4(x, y, (d - 0.2) / 2 + 0.03, 0, 0, rz), new THREE.Color(c));
+  } else {
+    masonry({ axis: 'x', at: 0, out: 1, from: -24, to: -6.6, y0: -0.4, y1: Y.cy, course: [0.6, 0.95], len: [1.1, 2.3] });
+    masonry({ axis: 'x', at: 0, out: 1, from: 0.6, to: 10, y0: -0.4, y1: Y.cy, course: [0.6, 0.95], len: [1.1, 2.3] });
+  }
   // a recessed carved inset panel in the retaining wall (sanctuary motif)
   B.trim.add(stoneBlock(2.2, 1.3, 0.2, { chip: 0.1 }), mat4(-13, 1.55, 0.02), PAL.indigoDeep);
   B.gold.add(new THREE.TorusGeometry(0.42, 0.06, 6, 18), mat4(-13, 1.55, 0.14), PAL.bronze);
@@ -357,8 +374,15 @@ export function buildLevel(scene) {
   // =========================================================================
   // central worn paving, leaving soil gaps around the tree and edges
   const treeX = -17.5, treeZ = -7.5;
-  pave(-15, 10, -11.4, -0.4, Y.cy, { missing: 0.1, avoid: (x, z) => Math.hypot(x - treeX, z - treeZ) < 4.5 || (x < -12 && z > -3) });
-  pave(-24, -15, -3.5, -0.4, Y.cy, { missing: 0.35 });
+  if (PAINT_FLOOR) {
+    // authored painted courtyard floor + a few heaved/tilted slabs as real relief
+    scene.userData.surfaces = scene.userData.surfaces || [];
+    scene.userData.surfaces.push(paintFloor(renderer));
+    for (const [x, z, w, d, rx, rz, ry, c] of FLOOR_RELIEF) B.paving.add(stoneBlock(w, 0.18, d, { jitter: 0.04, chip: 0.6, bevel: 0.25 }), mat4(x, Y.cy + 0.1, z, rx, ry, rz), new THREE.Color(c));
+  } else {
+    pave(-15, 10, -11.4, -0.4, Y.cy, { missing: 0.1, avoid: (x, z) => Math.hypot(x - treeX, z - treeZ) < 4.5 || (x < -12 && z > -3) });
+    pave(-24, -15, -3.5, -0.4, Y.cy, { missing: 0.35 });
+  }
   // the sanctuary ring: indigo inset with bronze inlay, cracked and half-overgrown
   {
     const rx = -3, rz = -5.5;
@@ -566,9 +590,11 @@ export function buildLevel(scene) {
   patch(-14, 0, 2.6, 2.6, PAL.mossDark, { squash: 0.6 });
   patch(5, 0, 3.0, 2.4, PAL.moss, { squash: 0.6 });
   patch(24, 0, 2.5, 2.4, PAL.mossDark);
-  patch(-19, Y.cy, -2, 2.4, PAL.moss);
-  patch(-18, Y.cy, -9, 3.2, PAL.mossDark, { squash: 0.8 });
-  patch(7.5, Y.cy, -2, 1.6, PAL.moss);
+  if (!PAINT_FLOOR) {
+    patch(-19, Y.cy, -2, 2.4, PAL.moss);
+    patch(-18, Y.cy, -9, 3.2, PAL.mossDark, { squash: 0.8 });
+    patch(7.5, Y.cy, -2, 1.6, PAL.moss);
+  }
   patch(-15, Y.ter, -15, 2.6, PAL.moss);
   patch(22, Y.ter, -19, 3.0, PAL.mossDark);
   patch(22, Y.cy, -2.6, 1.8, PAL.moss);
@@ -642,6 +668,7 @@ export function buildLevel(scene) {
   add(B.paving, M.paving, false); add(B.rock, M.rock); add(B.trim, M.trim); add(B.gold, M.gold);
   add(B.bed, M.bed, false);
   for (const m of V.buildVegMeshes(M)) group.add(m);
+  for (const m of scene.userData.surfaces || []) group.add(m);
   scene.add(group);
 
   return { col, group, mats: M };

@@ -35,6 +35,13 @@ if (TAG) {
     [`refine/${TAG}-05-ordinary`, '', 'tp(6,12); sim({mx:1},0.4); sim({},0.3)'],
   );
 }
+// Final deciding test: SET=final → docs/screenshots/final/ (same benchmark camera, 4 surface states)
+if (process.env.SET === 'final') {
+  shots.length = 0;
+  const hero = 'tp(-2.5,2.2); sim({mz:-1},0.5); sim({},0.4)';
+  shots.push(['final/00-before', 'surf=none', hero], ['final/01-paving-only', 'surf=paving', hero],
+    ['final/02-wall-only', 'surf=wall', hero], ['final/03-final-combined', 'surf=both', hero]);
+}
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 for (const [name, q, code] of shots) {
   if (only && !name.startsWith(only)) continue;

@@ -1,5 +1,26 @@
 # RESUME — bell_muted_cel3d_01
 
+## FINAL DECIDING TEST — authored large surfaces (in progress; read first)
+Scope: ONLY the courtyard paving and the main retaining wall (benchmark view). Nothing else may change.
+Mechanism: `src/surfaces.js` (new) paints each surface once into a canvas (hand-designed 2D
+illustration: authored stone layout + zones) mapped onto one plane with a plain MeshToonMaterial
+(same ramp; Lambert twin for T). `?surf=none|paving|wall|both` (default both) in `src/level.js`
+switches between the old procedural treatment and the painted one for A/B captures.
+Captures: `SET=final NODE_PATH=$(npm root -g) node tools/capture.mjs` → `docs/screenshots/final/`
+`00-before` (surf=none), `01-paving-only`, `02-wall-only`, `03-final-combined`, `04-value-grayscale`.
+
+- **Stage 1 paving — DONE.** `paintFloor()`: courses of irregular slabs (varying depth/width,
+  wandering bed lines, jittered corners), a worn route (stair head → ring → bridge, faint branch to
+  the tree) with larger, calmer, lighter slabs and finer joints; authored LOST zones (tree, corners,
+  colonnade, gorge lip, low wall) become soil beds with pebbles + moss; broken corners next to
+  losses; occasional cracks; moss blobs along joints in sheltered bands; broad washes (damp terrace
+  foot + gorge lip, canopy shade, warm exposed centre). `FLOOR_RELIEF`: 7 heaved/tilted geometry
+  slabs. Old courtyard `pave()` calls + 3 courtyard ground patches are skipped when painted.
+  Material tone e2e0dc to sit with the world. Shot: `final/01-paving-only.jpg`.
+  Read: noticeably more drawn/authored; centre still slightly regular in its course rows.
+- **Stage 2 wall — NEXT.**
+
+
 ## HERO-ASSET REFINEMENT PASS (complete — read this first)
 Goal: can a few hand-authored hero assets + art direction change the read of the whole scene?
 Scope rules: no new level/enemy/systems/traversal; keep 42° camera, layout, palette, controls,

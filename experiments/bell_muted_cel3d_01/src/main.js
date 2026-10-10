@@ -39,7 +39,7 @@ const hemi = new THREE.HemisphereLight(0xaebcc4, 0x55524a, 1.0); // cooler shelt
 scene.add(hemi);
 
 // ---------------------------------------------------------------- world
-const level = buildLevel(scene);
+const level = buildLevel(scene, renderer);
 const water = buildWater(scene);
 const fx = new FX(scene, level.col);
 const player = new Player(scene, level.col, fx);
