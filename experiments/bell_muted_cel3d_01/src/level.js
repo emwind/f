@@ -156,6 +156,39 @@ export function buildLevel(scene) {
     B.ground.add(g, mat4(x, y + 0.025, z, 0, rot, 0), tint(color, 0.05));
   }
 
+  // Extruded hand-drawn profile (front view, x/y) facing +z, centred on z
+  function slabXY(batch, pts, depth, x, y, z, color, rz = 0) {
+    const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([a, b]) => new THREE.Vector2(a, b))), { depth, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 1 });
+    g.translate(0, 0, -depth / 2);
+    batch.add(g, mat4(x, y, z, 0, 0, rz), color);
+  }
+  // Polygonal masonry face: wandering bed lines + slanted joints → irregular quads
+  function polyWall(x0, x1, y0, y1, zf, skip, topDrop) {
+    const bed = (row, x) => row === 0 ? 0 : 0.18 * Math.sin(x * 1.3 + row * 2.1) + 0.1 * Math.sin(x * 3.1 + row);
+    let rowY = y0, row = 0;
+    while (rowY < y1 - 0.2) {
+      const h = Math.min(y1 - rowY, rr(0.9, 1.35));
+      let xa = x0, xaT = x0;
+      while (xa < x1 - 0.05) {
+        const w = Math.min(rr(1.0, 2.1), x1 - xa);
+        let xb = xa + w, xbT = Math.min(x1, xb + rr(-0.35, 0.35));
+        if (x1 - xb < 0.5) { xb = x1; xbT = x1; }
+        const yA = rowY + bed(row, xa), yB = rowY + bed(row, xb);
+        const top = Math.min(y1, rowY + h);
+        const tA = top + bed(row + 1, xaT) - topDrop(xaT), tB = top + bed(row + 1, xbT) - topDrop(xbT);
+        const cx = (xa + xb + xaT + xbT) / 4, cy = (yA + yB + tA + tB) / 4;
+        if (!skip(cx, cy) && tA - yA > 0.25 && tB - yB > 0.25) {
+          const k = Math.min(1, (cy - y0) / (y1 - y0));
+          const col = new THREE.Color(pick([PAL.limeCool, PAL.limestone, 0xa89c82, 0x9a9584])).lerp(new THREE.Color(PAL.limeDark), (1 - k) * 0.35);
+          const sh = [[xa - cx + 0.03, yA - cy + 0.03], [xb - cx - 0.03, yB - cy + 0.03], [xbT - cx - 0.03, tB - cy - 0.03], [xaT - cx + 0.03, tA - cy - 0.03]];
+          slabXY(B.stone, sh, 0.85, cx, cy, zf - 0.42 + rr(0.0, 0.08), tint(col, 0.05), rr(-0.02, 0.02));
+        }
+        xa = xb; xaT = xbT;
+      }
+      rowY += h; row++;
+    }
+  }
+
   function pillar(x, y, z, h, { r = 0.42, broken = false, gold = false, cap = true, batch = B.stoneClean } = {}) {
     // plinth
     B.stone.add(stoneBlock(r * 2.7, 0.35, r * 2.7, { jitter: 0.05, chip: 0.4 }), mat4(x, y + 0.17, z), tint(PAL.limeCool));
@@ -376,23 +409,38 @@ export function buildLevel(scene) {
     }
     const P0 = T0 + 0.66;
     // façade wings (heavy coursing, larger blocks low down)
-    const wall = (from, to, y0, y1, at = F, opts = {}) => masonry({ axis: 'x', at, out: 1, from, to, y0, y1, depth: 0.9, coping: false, colors: [PAL.limeCool, PAL.limestone, 0xa89c82], len: [1.2, 2.4], course: [0.7, 1.0], ...opts });
-    wall(-7.5, -4.1, P0, P0 + 6.2);
-    wall(0.1, 3.5, P0, P0 + 6.2);
-    wall(-4.1, 0.1, P0 + 4.6, P0 + 6.2);
-    masonry({ axis: 'z', at: -7.5, out: -1, from: -23.8, to: F, y0: P0, y1: P0 + 6.2, coping: false, depth: 0.9 });
+    // Façade: polygonal "cyclopean" masonry (slanted joints, wandering bed lines,
+    // big irregular blocks) — deliberately unlike the courtyard's coursed walls.
+    const inPortal = (cx, cy) => {
+      if (cx > -4.55 && cx < 0.55 && cy < P0 + 4.95) return true;              // jambs + lintel
+      const ty = cy - (P0 + 4.85), half = 1.75 - ty * 1.15;                    // relieving triangle
+      return ty > -0.1 && ty < 1.55 && Math.abs(cx - sx) < half + 0.15;
+    };
+    const crownBreak = (cx) => cx > 0.9 ? (cx - 0.9) * 0.55 : 0;                // right side collapsed
+    polyWall(-7.5, 3.5, P0, P0 + 6.25, F, inPortal, crownBreak);    masonry({ axis: 'z', at: -7.5, out: -1, from: -23.8, to: F, y0: P0, y1: P0 + 6.2, coping: false, depth: 0.9 });
     masonry({ axis: 'z', at: 3.5, out: 1, from: -23.8, to: F, y0: P0, y1: P0 + 6.2, coping: false, depth: 0.9 });
     B.stone.add(new THREE.BoxGeometry(10.6, 6.2, 4.6), mat4(sx, P0 + 3.1, -21.4), PAL.limeDark);
     col.box(-7.5, -4.1, -24, F, T0, T0 + 14);
     col.box(0.1, 3.5, -24, F, T0, T0 + 14);
     col.box(-4.1, 0.1, -24, -18.7, T0, T0 + 14);
-    // stepped portal: three nested frames receding into darkness
-    for (let k = 0; k < 3; k++) {
-      const hw = 2.1 - k * 0.32, top = P0 + 4.6 - k * 0.4, z = F - 0.05 - k * 0.3;
-      B.stoneClean.add(stoneBlock(0.5, top - P0, 0.6, { chip: 0.25 }), mat4(sx - hw + 0.25, (P0 + top) / 2, z), tint(k ? PAL.limeCool : PAL.limestone, 0.04));
-      B.stoneClean.add(stoneBlock(0.5, top - P0, 0.6, { chip: 0.25 }), mat4(sx + hw - 0.25, (P0 + top) / 2, z), tint(k ? PAL.limeCool : PAL.limestone, 0.04));
-      B.stoneClean.add(stoneBlock(hw * 2, 0.55, 0.6, { chip: 0.2 }), mat4(sx, top - 0.27, z), tint(k ? 0xa99d84 : 0xc3b596, 0.04));
-    }
+    // Battered monolithic portal: tapering jambs, one huge cracked lintel.
+    const JB = [[-0.6, 0], [0.55, 0], [0.42, 4.0], [-0.55, 4.0]];             // left jamb profile (inner edge leans in)
+    slabXY(B.stone, JB, 0.95, -3.75, P0, F - 0.05, tint(0xb0a487, 0.03));
+    slabXY(B.stone, JB.map(([x, y]) => [-x, y]), 0.95, -0.25, P0, F - 0.05, tint(0xa59a80, 0.03));
+    // dark reveals: the inner faces of the opening fall into near-black
+    B.trim.add(new THREE.BoxGeometry(0.12, 4.0, 0.9), mat4(-3.15, P0 + 2.0, F - 0.45, 0, 0, -0.03), 0x2a2f2e);
+    B.trim.add(new THREE.BoxGeometry(0.12, 4.0, 0.9), mat4(-0.85, P0 + 2.0, F - 0.45, 0, 0, 0.03), 0x2a2f2e);
+    B.trim.add(new THREE.BoxGeometry(2.4, 0.12, 0.9), mat4(sx, P0 + 3.95, F - 0.45), 0x222726);
+    // lintel in two pieces: the right half has dropped and shifted along an old crack
+    slabXY(B.stone, [[-2.55, 0], [-0.1, 0], [0.05, 0.85], [-2.45, 0.9]], 1.1, sx, P0 + 4.0, F - 0.02, tint(0xbcae8f, 0.02));
+    slabXY(B.stone, [[0.0, 0], [2.5, 0.05], [2.4, 0.86], [0.12, 0.84]], 1.1, sx + 0.05, P0 + 3.94, F + 0.04, tint(0xb2a588, 0.02), -0.035);
+    // relieving triangle above the lintel: indigo field, bronze sun disc, carved rays
+    slabXY(B.trim, [[-1.6, 0], [1.6, 0], [0, 1.45]], 0.3, sx, P0 + 4.9, F - 0.12, PAL.indigoDeep);
+    slabXY(B.trim, [[-1.35, 0.08], [1.35, 0.08], [0, 1.25]], 0.3, sx, P0 + 4.9, F - 0.05, PAL.indigo);
+    B.gold.add(new THREE.CylinderGeometry(0.3, 0.3, 0.08, 14), mat4(sx, P0 + 5.36, F + 0.12, Math.PI / 2, 0, 0), PAL.gold);
+    for (let i = 0; i < 5; i++) { const a = 0.35 + i * 0.6; B.gold.add(new THREE.BoxGeometry(0.3, 0.05, 0.05), mat4(sx + Math.cos(a) * 0.52, P0 + 5.36 + Math.sin(a) * 0.44, F + 0.1, 0, 0, a), i === 2 ? PAL.gold : PAL.bronze); }
+    // worn threshold slab, darker and damp
+    B.stone.add(stoneBlock(2.6, 0.12, 1.3, { chip: 0.3, bevel: 0.3 }), mat4(sx, P0 + 0.04, F + 0.15), tint(0x8b8573));
     // dark interior volume behind the frames (reads as depth, not a painted door)
     B.trim.add(new THREE.BoxGeometry(3.0, 3.6, 0.2), mat4(sx, P0 + 1.8, -18.75), 0x262b2c);
     // sealed door slab: deep indigo with bronze seal
@@ -400,15 +448,20 @@ export function buildLevel(scene) {
     B.gold.add(new THREE.TorusGeometry(0.62, 0.07, 6, 24), mat4(sx, P0 + 2.0, -18.37), PAL.gold);
     B.gold.add(new THREE.TorusGeometry(0.3, 0.05, 6, 16), mat4(sx, P0 + 2.0, -18.37), PAL.bronze);
     B.gold.add(new THREE.BoxGeometry(0.06, 2.8, 0.04), mat4(sx, P0 + 1.7, -18.38), PAL.bronze);
-    // relief panel above the portal: indigo field, bronze sun-disc and rays
-    B.trim.add(new THREE.BoxGeometry(3.6, 1.2, 0.14), mat4(sx, P0 + 5.35, F + 0.05), PAL.indigo);
-    B.gold.add(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 14), mat4(sx, P0 + 5.35, F + 0.14, Math.PI / 2, 0, 0), PAL.gold);
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; B.gold.add(new THREE.BoxGeometry(0.36, 0.06, 0.05), mat4(sx + Math.cos(a) * 0.62, P0 + 5.35 + Math.sin(a) * 0.42, F + 0.14, 0, 0, a), PAL.bronze); }
-    // cornice + corbelled stepped crown
-    B.stoneClean.add(stoneBlock(11.6, 0.45, 6.8, { chip: 0.3 }), mat4(sx, P0 + 6.42, -20.7), tint(PAL.limestone, 0.03));
-    const crown = [[9.6, 0.7, 5.6], [7.6, 0.7, 4.6], [5.4, 0.75, 3.6], [3.0, 0.8, 2.4]];
-    let cy = P0 + 6.65;
-    crown.forEach(([w, h, d], i) => { B.stoneClean.add(stoneBlock(w, h, d, { chip: 0.35 }), mat4(sx + (i === 3 ? 0.2 : 0), cy + h / 2, -20.8, 0, 0, i === 3 ? 0.05 : 0), tint(i % 2 ? PAL.limeCool : 0xb3a68a, 0.04)); cy += h; });
+    // cornice: intact on the left, broken off on the right; mossy ledges (B.stone = moss + streaks)
+    slabXY(B.stone, [[-5.8, 0], [1.4, 0], [1.1, 0.42], [-5.85, 0.48]], 6.8, sx, P0 + 6.2, -20.7, tint(PAL.limestone, 0.03));
+    slabXY(B.stone, [[1.4, 0], [3.0, 0.05], [2.7, 0.3], [1.6, 0.38]], 6.2, sx, P0 + 6.05, -20.8, tint(0xa99d84, 0.03), -0.06);
+    // corbelled crown: stepped on the left, collapsed on the right (uneven tops)
+    slabXY(B.stone, [[-4.9, 0], [0.9, 0], [0.4, 0.62], [-4.8, 0.7]], 5.4, sx, P0 + 6.66, -20.9, tint(PAL.limeCool, 0.03));
+    slabXY(B.stone, [[-3.9, 0], [-0.4, 0], [-0.9, 0.7], [-3.7, 0.66]], 4.4, sx, P0 + 7.32, -21.0, tint(0xb3a68a, 0.03));
+    slabXY(B.stone, [[-2.9, 0], [-1.3, 0], [-1.6, 0.6], [-2.7, 0.75]], 3.0, sx, P0 + 7.98, -21.1, tint(PAL.limeCool, 0.03));
+    // a crown stone slid off and lodged on the broken cornice end; two more fell to the terrace
+    B.stone.add(stoneBlock(1.3, 0.6, 1.0, { chip: 0.6 }), mat4(1.8, P0 + 6.6, -17.9, 0.2, 0.5, -0.45), tint(PAL.limeCool));
+    B.stone.add(stoneBlock(1.2, 0.65, 0.9, { chip: 0.7 }), mat4(4.3, T0 + 0.33, -15.0, 0.1, 0.9, 0.2), tint(0xa99d84));
+    B.stone.add(stoneBlock(0.8, 0.45, 0.7, { chip: 0.7 }), mat4(5.3, T0 + 0.22, -14.0, 0.3, 0.2, -0.3), tint(PAL.limeCool));
+    col.box(3.7, 4.9, -15.5, -14.5, T0, T0 + 0.7);
+    // damp: dark mineral stains running down from the cornice drip line
+    for (const [x, len] of [[-6.6, 2.6], [-5.0, 1.6], [-1.2, 1.1], [1.3, 3.2], [2.9, 2.2]]) B.trim.add(new THREE.BoxGeometry(0.35, len, 0.04), mat4(x, P0 + 6.15 - len / 2, F + 0.1), 0x5f6158);
     // broken capstone fallen onto the plinth
     B.stoneClean.add(stoneBlock(1.4, 0.7, 1.1, { chip: 0.6 }), mat4(2.9, T0 + 1.0, -16.6, 0.3, 0.6, 0.4), tint(PAL.limeCool));
     col.box(2.2, 3.6, -17.2, -16.0, T0, T0 + 1.3);

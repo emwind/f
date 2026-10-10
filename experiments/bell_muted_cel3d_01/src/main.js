@@ -23,19 +23,19 @@ const post = new Post(renderer, W() * pr, H() * pr);
 
 // ---------------------------------------------------------------- scene
 const scene = new THREE.Scene();
-const SKY = new THREE.Color(0x9aa29a);
+const SKY = new THREE.Color(0x8f9a98);
 scene.background = SKY;
-scene.fog = new THREE.Fog(0x8f988f, 34, 95);
+scene.fog = new THREE.Fog(0x87918f, 32, 92);
 
 // restrained key light from the upper-left (west, slightly south) + cool sky fill
-const sun = new THREE.DirectionalLight(0xfff0d8, 2.7);
-const SUN_DIR = new THREE.Vector3(-0.72, 0.8, 0.36).normalize();
+const sun = new THREE.DirectionalLight(0xffe9cc, 2.5); // a little lower and warmer: late, quieter light
+const SUN_DIR = new THREE.Vector3(-0.78, 0.72, 0.34).normalize();
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 90 });
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04; sun.shadow.radius = 3;
 scene.add(sun, sun.target);
-const hemi = new THREE.HemisphereLight(0xc3cbd0, 0x5e5848, 1.05);
+const hemi = new THREE.HemisphereLight(0xaebcc4, 0x55524a, 1.0); // cooler shelter fill
 scene.add(hemi);
 
 // ---------------------------------------------------------------- world
@@ -111,7 +111,7 @@ function onDebugKey(code) {
   else if (code === 'BracketRight') CAM.dist = Math.min(48, CAM.dist + 2);
   else if (code === 'Minus') CAM.fov = Math.max(18, CAM.fov - 3);
   else if (code === 'Equal') CAM.fov = Math.min(60, CAM.fov + 3);
-  else if (code === 'KeyC') GLOBAL.uCloud.value = GLOBAL.uCloud.value > 0 ? 0 : 0.24;
+  else if (code === 'KeyC') GLOBAL.uCloud.value = GLOBAL.uCloud.value > 0 ? 0 : 0.27;
   else if (code === 'KeyH') document.getElementById('help').classList.toggle('hide');
   else if (code === 'KeyR') reset();
   updateHud();

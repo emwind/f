@@ -155,4 +155,23 @@ That work is a question of art production rather than technology. Recreate this 
 shading model in Godot, but only alongside a small test of hand-modelled assets. Don't port this
 procedural geometry wholesale.
 
+## Hero-asset refinement pass
+
+Before/after comparisons (before on top, after below) are in `docs/screenshots/refine/cmp-*.jpg`.
+
+- **Guardian.** Rebuilt from hand-drawn, asymmetric extruded silhouettes. It has a recessed head
+  niche, a broken right shoulder with a fern growing from the break, a seal motif and localized
+  moss.
+- **Hero tree.** Rebuilt as four flat, scalloped canopy tiers on a visible limb structure, with
+  gaps between the tiers. Shrubs and the small trees now use the same tier shapes.
+- **Shrine.** The façade is now polygonal masonry. The portal is battered, the lintel is cracked
+  and has dropped, and a relieving triangle above it carries a sun relief. The right side of the
+  crown has collapsed, with fallen stones on the terrace and damp stains below the cornice.
+- **Light.** A small shift to a quieter, cooler light.
+
+**Verdict.** Each asset now reads as authored, and the shrine gained the most. The whole frame is
+still dominated by flat paving and coursed walls, though, and that is what keeps it looking like
+low-poly indie 3D. The next test should be surface authoring on the ground and walls, not more
+hero props.
+
 See `docs/RESUME_MUTED_CEL3D.md` for the full handoff.

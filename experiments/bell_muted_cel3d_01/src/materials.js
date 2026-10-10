@@ -47,9 +47,9 @@ export const STATE = { toon: true, outlines: true, shadows: true, grade: true };
 // Shared uniforms (time, height falloff) for all painted materials
 export const GLOBAL = {
   uTime: { value: 0 },
-  uLowTint: { value: new THREE.Color(0x56656a) },   // what deep/low areas drift toward
+  uLowTint: { value: new THREE.Color(0x4f6066) },   // what deep/low areas drift toward
   uLowRange: { value: new THREE.Vector2(-1.2, 1.6) },
-  uCloud: { value: 0.24 },                            // large soft shade zones (authored value composition)
+  uCloud: { value: 0.27 },                            // large soft shade zones (authored value composition)
 };
 
 // 3-band toon ramp with slightly soft transitions (avoids the hard anime edge)

@@ -1,6 +1,6 @@
 # RESUME — bell_muted_cel3d_01
 
-## HERO-ASSET REFINEMENT PASS (in progress — read this first)
+## HERO-ASSET REFINEMENT PASS (complete — read this first)
 Goal: can a few hand-authored hero assets + art direction change the read of the whole scene?
 Scope rules: no new level/enemy/systems/traversal; keep 42° camera, layout, palette, controls,
 toon system, outline strength, shrine destination.
@@ -28,13 +28,41 @@ Benchmark captures: `TAG=before|after NODE_PATH=$(npm root -g) node tools/captur
    `src/main.js`: canopy fade radius 6.4 around (−14.2, −6.4).
    Verdict: biggest visible change so far — designed tree silhouette with negative space; tiers
    are slightly "stone-pine/acacia", which suits ancient-Mediterranean mood.
-3. **Shrine — NEXT.** Then material/value + lighting mood pass, then `TAG=after` capture + verdict.
+3. **Shrine — DONE.** `src/level.js` shrine block: new helpers `slabXY()` (extruded hand-drawn
+   front profile) and `polyWall()` (polygonal "cyclopean" masonry: wandering bed lines, slanted
+   joints, skip mask for the portal, `topDrop` for the collapsed right side). Replaced coursed
+   wings + 3 nested frames + slab crown with: battered monolithic jambs, near-black inner reveals,
+   two-piece cracked lintel (right half dropped/shifted), indigo relieving triangle with bronze sun
+   disc + rays, worn damp threshold, cornice broken on the right, stepped crown collapsed on the
+   right, one crown stone lodged on the cornice end + two fallen on the terrace (collider at
+   x 3.7..4.9, z −15.5..−14.5), dark mineral stain strips under the drip line. Door/seal/glow kept.
+4. **Light/value nudge — DONE (small).** `src/main.js`: sun ffe9cc 2.5 from (−0.78, 0.72, 0.34),
+   hemi aebcc4/55524a 1.0, sky 8f9a98, fog 87918f 32–92. `src/materials.js`: uLowTint 4f6066,
+   uCloud 0.27. Quieter/cooler; not darker overall.
 
+### Captures
+`docs/screenshots/refine/before-*` (pre-pass; before-03 re-shot from commit 2e638b0 at the
+same position as after-03), `after-*`, and `cmp-*` (before above / after below, half size).
+Benchmark view = `cmp-01-hero-stair-courtyard.jpg`.
 
-Status: **all milestones (0–4) reached; the handoff is complete.** The prototype runs, the route
-is fully traversable, combat with the guardian works (wake → telegraphed slam → hits → crumble),
-and the screenshot set has been captured. The visual verdict and its reasoning are in
-`README.md` under "Candid visual assessment".
+### Verdict of this pass (honest)
+- The three hero assets **did** change their own read: the shrine now looks like a specific old
+  place (biggest single gain), the tree reads as a designed tiered silhouette with branch logic
+  and negative space, the guardian reads as a carved shrine-sentinel instead of a robot.
+- They did **not** materially change the read of the whole frame. At gameplay scale ~70% of
+  the image is still flat, evenly-lit paving and coursed modular walls, and that is what still
+  says "clean low-poly indie 3D". The guardian is too small on screen to set the style.
+- Biggest difference: the shrine (identity) > tree (silhouette language, also adopted by shrubs) >
+  guardian (only visible close up).
+- Full 3D is promising enough for a *narrow* Godot proof only if that proof is about surface
+  authoring (painted/textured ground + walls), not about porting these procedural assets.
+- Single remaining visual weakness: **the ground/wall surfaces** — unpainted flat planes with
+  procedural tint that occupy most of the frame.
+
+### Next step (if continued)
+One test only: hand-paint (or texture) the courtyard paving and the retaining wall — joints,
+edge wear, worn route, damp — and re-shoot cmp-01. If the frame still reads generic after that,
+full 3D muted Bell lacks the identity and the hybrid/sprite direction should win.
 
 ## Goal
 

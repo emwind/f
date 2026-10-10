@@ -30,7 +30,7 @@ if (TAG) {
   shots.push(
     [`refine/${TAG}-01-hero-stair-courtyard`, '', 'tp(-2.5,2.2); sim({mz:-1},0.5); sim({},0.4)'],
     [`refine/${TAG}-02-guardian-close`, '', face + 'tp(-3,-1.2); sim({},0.3); fc(); sim({},0.05)'],
-    [`refine/${TAG}-03-tree`, '', 'tp(-11,-1.5); sim({mx:-1},0.3); sim({},0.4)'],
+    [`refine/${TAG}-03-tree`, '', 'tp(-7,-1.0); sim({mx:-1},0.2); sim({},0.4)'],
     [`refine/${TAG}-04-shrine`, '', 'tp(-2,-13); sim({mz:-1},0.3); sim({},0.5)'],
     [`refine/${TAG}-05-ordinary`, '', 'tp(6,12); sim({mx:1},0.4); sim({},0.3)'],
   );
