@@ -157,7 +157,7 @@ function step(dt, inp) {
   const dd = Math.hypot(player.pos.x - SHRINE_DOOR.x, player.pos.z - SHRINE_DOOR.z);
   sealGlow.material.opacity = (0.08 + 0.5 * (1 - THREE.MathUtils.smoothstep(dd, 2, 12))) * (0.85 + 0.15 * Math.sin(GLOBAL.uTime.value * 2));
   if (canopy) {
-    const under = Math.hypot(player.pos.x + 14.5, player.pos.z + 6.8) < 5.6 && player.pos.y < 6;
+    const under = Math.hypot(player.pos.x + 14.2, player.pos.z + 6.4) < 6.4 && player.pos.y < 6;
     canopyA += ((under ? 0.38 : 1) - canopyA) * Math.min(1, dt * 6);
     canopy.material.opacity = canopy.material.userData.alt.opacity = canopyA;
   }

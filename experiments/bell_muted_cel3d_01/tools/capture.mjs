@@ -23,6 +23,18 @@ const shots = [
   ['12-cmp-pitch-58', '', 'tp(-2.5,2.2); sim({mz:-1},0.5); sim({},0.4); G.toggle("Digit4"); G.snapCam()'],
   ['13-cmp-pitch-35', '', 'tp(-2.5,2.2); sim({mz:-1},0.5); sim({},0.4); G.toggle("Digit1"); G.snapCam()'],
 ];
+// Refinement benchmark set: TAG=before|after node tools/capture.mjs  → docs/screenshots/refine/<tag>-*.jpg
+const TAG = process.env.TAG;
+if (TAG) {
+  shots.length = 0;
+  shots.push(
+    [`refine/${TAG}-01-hero-stair-courtyard`, '', 'tp(-2.5,2.2); sim({mz:-1},0.5); sim({},0.4)'],
+    [`refine/${TAG}-02-guardian-close`, '', face + 'tp(-3,-1.2); sim({},0.3); fc(); sim({},0.05)'],
+    [`refine/${TAG}-03-tree`, '', 'tp(-11,-1.5); sim({mx:-1},0.3); sim({},0.4)'],
+    [`refine/${TAG}-04-shrine`, '', 'tp(-2,-13); sim({mz:-1},0.3); sim({},0.5)'],
+    [`refine/${TAG}-05-ordinary`, '', 'tp(6,12); sim({mx:1},0.4); sim({},0.3)'],
+  );
+}
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 for (const [name, q, code] of shots) {
   if (only && !name.startsWith(only)) continue;

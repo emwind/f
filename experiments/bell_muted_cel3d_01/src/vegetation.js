@@ -62,7 +62,9 @@ export function clump(cx, cy, cz, size, { color = PAL.leaf, dark = PAL.leafDark,
 
 // Shrub = low clump hugging the ground
 export function shrub(x, y, z, s = 1, opts = {}) {
-  clump(x, y + 0.45 * s, z, 0.95 * s, { flat: 0.55, n: 4, droop: 0.05, ...opts });
+  const o = { color: opts.color ?? PAL.leafOlive, dark: opts.dark ?? PAL.leafDark, under: 0x2a352b };
+  tier(x, y + 0.42 * s, z, 0.95 * s, 0.6 * s, { ...o, lobes: 4 });
+  tier(x + 0.55 * s, y + 0.28 * s, z + 0.35 * s, 0.55 * s, 0.38 * s, { ...o, lobes: 3, rot: 1 });
 }
 
 // Branch: tapered tube along points
@@ -141,29 +143,73 @@ export function root(points, r0 = 0.22, r1 = 0.05) {
 }
 
 // The large tree: asymmetric leaning trunk, a few major limbs, few big canopy masses.
-export function bigTree(x, y, z) {
-  const T = (pts, r0, r1) => branch(pts.map(([a, b, c]) => [x + a, y + b, z + c]), r0, r1, PAL.bark);
-  // trunk leans toward the courtyard (+x, slightly +z)
-  T([[0, -0.3, 0], [0.2, 1.5, 0.1], [0.7, 3.2, 0.3], [1.3, 4.6, 0.4]], 1.0, 0.6);
-  // buttress flare: short, thick, hugging the ground
-  for (let i = 0; i < 6; i++) {
-    const a = i / 6 * Math.PI * 2 + 0.3, L = 1.2 + (i % 2) * 0.5;
-    T([[Math.cos(a) * 0.2, 1.1, Math.sin(a) * 0.2], [Math.cos(a) * 0.75, 0.35, Math.sin(a) * 0.75], [Math.cos(a) * L, 0.05, Math.sin(a) * L]], 0.6, 0.22);
+// Canopy TIER: a broad, flat-bottomed, scalloped leaf mass (old oak / stone-pine
+// tiers) instead of a sphere. Lit dome on top, a dark sheltered underside band,
+// lobed rim so the silhouette reads as foliage at gameplay scale.
+export function tier(cx, cy, cz, R, H, { color = PAL.leaf, dark = PAL.leafDark, under = 0x26322a, rot = 0, lobes = 5, sq = 0.85 } = {}) {
+  const g0 = new THREE.IcosahedronGeometry(1, 3);
+  const g = g0.index ? g0.toNonIndexed() : g0;
+  const p = g.attributes.position;
+  const ph = R * 3.7 + cx, cA = new THREE.Color(color), cB = new THREE.Color(dark), cU = new THREE.Color(under), c = new THREE.Color();
+  const nor = new Float32Array(p.count * 3), col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const th = Math.atan2(z, x) + rot;
+    const scal = 1 + 0.16 * Math.sin(lobes * th + ph) + 0.08 * Math.sin((lobes * 2 + 1) * th + ph * 2) + (noise3(x * 2.2 + ph, y * 2.2, z * 2.2) - 0.5) * 0.18;
+    const top = y > 0;
+    const yy = top ? y * H * (0.85 + 0.3 * noise3(x * 3 + ph, 0, z * 3)) : y * H * 0.28; // flat-ish underside
+    const px = x * R * scal, pz = z * R * scal * sq;
+    p.setXYZ(i, cx + px, cy + yy, cz + pz);
+    // normals: ellipsoid-smooth so the toon band sweeps across the whole tier
+    const n = new THREE.Vector3(x / (R * scal), (top ? y / H : y / (H * 0.28)) * 0.9, z / (R * scal * sq)).normalize();
+    nor.set([n.x, n.y, n.z], i * 3);
+    // three grouped values: lit crown, mid rim, cool dark underside
+    const t = top ? THREE.MathUtils.smoothstep(y, 0.0, 0.55) : 0;
+    if (!top) c.copy(cU); else c.copy(cB).lerp(cA, t);
+    col.set([c.r, c.g, c.b], i * 3);
   }
-  // major limbs
-  T([[1.2, 4.4, 0.4], [3.0, 5.6, 0.9], [5.2, 6.1, 1.6], [6.6, 6.0, 2.4]], 0.42, 0.14);
-  T([[1.1, 4.3, 0.3], [0.6, 6.2, -0.8], [0.9, 7.6, -1.8]], 0.4, 0.15);
-  T([[1.0, 4.0, 0.4], [-0.8, 5.3, 1.0], [-2.2, 6.0, 1.4]], 0.32, 0.1);
-  T([[2.6, 5.4, 0.8], [3.4, 6.8, -0.4], [4.0, 7.6, -1.0]], 0.22, 0.08);
-  // canopy: a few large asymmetric masses, heaviest over the courtyard side
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  (CANOPY ? VEG.canopy : VEG.leaf).add(g, null, 0xffffff, { keepNormals: true });
+}
+// A canopy mass = a main tier plus a few smaller rim lobes stepping down/out
+function mass(cx, cy, cz, R, opts = {}) {
+  tier(cx, cy, cz, R, R * 0.42, opts);
+  const n = opts.sub ?? 3;
+  for (let i = 0; i < n; i++) {
+    const a = (opts.subA ?? 0) + i * (Math.PI * 2 / n) * 0.55 + rr(-0.2, 0.2);
+    const d = R * rr(0.75, 0.95);
+    tier(cx + Math.cos(a) * d, cy - R * rr(0.12, 0.28), cz + Math.sin(a) * d * 0.85, R * rr(0.36, 0.5), R * 0.2, { ...opts, lobes: 4, rot: a });
+  }
+}
+
+// The large tree: leaning asymmetric trunk that forks into three limbs, each
+// carrying one broad tier; gaps between tiers show the branch structure.
+export function bigTree(x, y, z) {
+  const T = (pts, r0, r1, c = PAL.bark) => branch(pts.map(([a, b, cc]) => [x + a, y + b, z + cc]), r0, r1, c);
+  // trunk: thick, leaning toward the courtyard, with a twist and a scar-like kink
+  T([[0, -0.4, 0], [0.15, 1.2, 0.05], [0.55, 2.6, 0.35], [0.7, 3.5, 0.2], [1.1, 4.3, 0.35]], 1.15, 0.62);
+  // exposed buttress roots, long on the courtyard side, short against the cliff
+  const roots = [[0.3, 1.5], [1.1, 1.8], [2.0, 1.2], [3.0, 1.0], [3.9, 0.9], [4.8, 1.2], [5.6, 1.0]];
+  for (const [a, L] of roots) T([[Math.cos(a) * 0.25, 1.4, Math.sin(a) * 0.25], [Math.cos(a) * 0.8, 0.45, Math.sin(a) * 0.8], [Math.cos(a + 0.25) * L, 0.08, Math.sin(a + 0.25) * L], [Math.cos(a + 0.5) * (L + 0.35), 0.0, Math.sin(a + 0.5) * (L + 0.35)]], 0.75, 0.16, PAL.root);
+  // three major limbs from the fork
+  T([[1.0, 4.1, 0.3], [2.4, 5.0, 0.7], [3.8, 5.7, 1.2], [5.2, 6.1, 1.6]], 0.5, 0.18);   // A: out over the courtyard
+  T([[1.0, 4.2, 0.2], [0.8, 5.6, -0.4], [0.9, 7.0, -1.3], [1.1, 7.9, -1.9]], 0.46, 0.16); // B: up and back
+  T([[0.9, 4.0, 0.4], [-0.3, 4.8, 0.9], [-1.5, 5.4, 1.2], [-2.6, 5.7, 1.5]], 0.36, 0.12); // C: low, toward the cliff
+  // secondary limbs/twigs reaching the rim lobes (visible in the gaps)
+  T([[3.2, 5.5, 1.0], [4.4, 5.2, 2.4], [5.6, 4.9, 3.4]], 0.17, 0.05);
+  T([[2.4, 5.0, 0.7], [3.0, 6.3, -0.4], [3.4, 7.0, -0.9]], 0.18, 0.06);
+  T([[0.85, 6.4, -0.9], [-0.4, 7.1, -1.4], [-1.0, 7.4, -1.6]], 0.14, 0.05);
+  T([[5.0, 6.05, 1.55], [6.4, 6.2, 1.2], [7.2, 6.0, 0.9]], 0.12, 0.04);
+  // canopy: four tiers at distinct heights, heaviest over the courtyard
   CANOPY = true;
-  const C = (a, b, c, s, o = {}) => clump(x + a, y + b, z + c, s, o);
-  C(5.6, 6.6, 1.9, 2.2, { n: 6 });
-  C(3.4, 7.9, -0.6, 2.4, { n: 6, color: PAL.leafOlive });
-  C(0.8, 8.5, -1.9, 2.3, { n: 6 });
-  C(-1.9, 6.7, 1.2, 1.8, { n: 5, color: PAL.leaf });
-  C(1.6, 6.4, 1.6, 1.6, { n: 4, color: PAL.leafDark, dark: 0x27342a });
+  mass(x + 5.1, y + 6.6, z + 1.7, 2.7, { color: PAL.leaf, sub: 3, subA: 0.2 });
+  mass(x + 1.1, y + 8.5, z - 1.9, 2.3, { color: PAL.leafOlive, sub: 3, subA: 2.4 });
+  mass(x - 2.5, y + 6.0, z + 1.5, 1.7, { color: PAL.leaf, sub: 2, subA: 1.6 });
+  mass(x + 5.7, y + 5.2, z + 3.6, 1.1, { color: PAL.leafOlive, sub: 1, subA: 0.8 });
   CANOPY = false;
+  // hanging growth from the undersides (selective, two places only)
+  for (const [hx, hz, hy, n] of [[4.0, 2.4, 5.95, 4], [-2.0, 2.2, 5.6, 2]]) for (let i = 0; i < n; i++) vine(x + hx + i * 0.45, y + hy, z + hz + rr(-0.3, 0.3), rr(1.4, 2.6), 0, 0.2, 1.1);
 }
 
 // A slimmer secondary tree
@@ -171,8 +217,8 @@ export function smallTree(x, y, z, s = 1, lean = 0.3) {
   const T = (pts, r0, r1) => branch(pts.map(([a, b, c]) => [x + a * s, y + b * s, z + c * s]), r0 * s, r1 * s, PAL.bark);
   T([[0, -0.2, 0], [lean * 0.5, 1.8, 0], [lean, 3.4, 0.2], [lean * 1.6, 4.6, 0.1]], 0.35, 0.16);
   T([[lean, 3.2, 0.2], [lean + 1.2, 4.0, 0.6], [lean + 1.9, 4.4, 0.9]], 0.16, 0.06);
-  clump(x + (lean * 1.6) * s, y + 5.1 * s, z, 1.5 * s, { n: 5, color: PAL.leafOlive });
-  clump(x + (lean + 1.8) * s, y + 4.5 * s, z + 0.8 * s, 1.0 * s, { n: 4 });
+  mass(x + (lean * 1.6) * s, y + 5.0 * s, z, 1.6 * s, { color: PAL.leafOlive, sub: 2 });
+  tier(x + (lean + 1.9) * s, y + 4.5 * s, z + 0.9 * s, 0.9 * s, 0.4 * s, { color: PAL.leaf });
 }
 
 export function buildVegMeshes(mats) {

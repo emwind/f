@@ -1,5 +1,36 @@
 # RESUME — bell_muted_cel3d_01
 
+## HERO-ASSET REFINEMENT PASS (in progress — read this first)
+Goal: can a few hand-authored hero assets + art direction change the read of the whole scene?
+Scope rules: no new level/enemy/systems/traversal; keep 42° camera, layout, palette, controls,
+toon system, outline strength, shrine destination.
+
+Benchmark captures: `TAG=before|after NODE_PATH=$(npm root -g) node tools/capture.mjs`
+→ `docs/screenshots/refine/{before,after}-01-hero-stair-courtyard, -02-guardian-close, -03-tree,
+-04-shrine, -05-ordinary`. `before-*` captured. WIP shots: `refine/wip-*`.
+
+1. **Guardian — DONE.** `src/enemy.js` geometry rebuilt (behaviour/pose code unchanged). New
+   `hewn(profile, depth, mat, …)` = hand-drawn asymmetric front silhouette polygons extruded with
+   a tiny bevel, flat normals, vertex-colour stain from below + darker back faces + per-triangle
+   localized moss. Design: pedestal feet, wide skirt slab with indigo course, one tapered stele
+   torso with a broken-away right shoulder (jagged break slab, fern sprouting), shrine-roof cap,
+   recessed head niche (dark recess + lintel + jambs, sunk face + eye slit), indigo/gold seal motif
+   on the chest (echoes the shrine door), dark crack strips, massive intact left arm with mossy
+   pauldron + bronze disc, thinner broken right arm. root scale 1.15, hull ×1.1. Old `blk()` removed.
+   Verdict: no longer reads robotic/golem; reads as a carved shrine-sentinel. Still flat-extruded
+   (front-view authored; side views are slab-like).
+2. **Tree — DONE.** `src/vegetation.js`: new `tier()` (broad flat-bottomed scalloped canopy tier:
+   lobed rim, lit crown → mid rim → cool dark underside in vertex colour, ellipsoid normals) and
+   `mass()` (main tier + stepped rim lobes). `bigTree` rewritten: thick leaning kinked trunk, 7
+   short curling buttress roots, 3 major limbs + 4 twigs visible between 4 tiers at distinct
+   heights, two hanging vine groups. `shrub()` and `smallTree()` now use tiers (shared language).
+   `src/level.js`: courtyard surface roots now meander and are thinner (were straight "stilts").
+   `src/main.js`: canopy fade radius 6.4 around (−14.2, −6.4).
+   Verdict: biggest visible change so far — designed tree silhouette with negative space; tiers
+   are slightly "stone-pine/acacia", which suits ancient-Mediterranean mood.
+3. **Shrine — NEXT.** Then material/value + lighting mood pass, then `TAG=after` capture + verdict.
+
+
 Status: **all milestones (0–4) reached; the handoff is complete.** The prototype runs, the route
 is fully traversable, combat with the guardian works (wake → telegraphed slam → hits → crumble),
 and the screenshot set has been captured. The visual verdict and its reasoning are in
